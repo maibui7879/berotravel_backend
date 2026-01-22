@@ -10,6 +10,6 @@ import { RtStrategy } from './strategies/rt.strategy';
 @Module({
   imports: [TypeOrmModule.forFeature([User]), JwtModule.register({})],
   controllers: [AuthController],
-  providers: [AuthService, AtStrategy, RtStrategy],
+  providers: [AuthService, AtStrategy, RtStrategy,],
 })
 export class AuthModule {}

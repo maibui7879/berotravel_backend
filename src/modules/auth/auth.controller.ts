@@ -1,21 +1,45 @@
-import { Controller, Post, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { 
+  Controller, 
+  Post, 
+  Body, 
+  UseGuards, 
+  HttpCode, 
+  HttpStatus 
+} from '@nestjs/common';
+import { 
+  ApiTags, 
+  ApiOperation, 
+  ApiBearerAuth, 
+  ApiBody, 
+  ApiResponse 
+} from '@nestjs/swagger';
+
 import { AuthService } from './auth.service';
+import { CreateUserDto } from '../users/dto/create-user.dto';
+import { LoginDto } from './dto/login.dto';
+import { 
+  FacebookLoginDto, 
+  GoogleLoginDto, 
+  SocialLoginResponseDto 
+} from './dto/social-login.dto';
+
+// Decorators & Guards
 import { Public } from 'src/common/decorators/public.decorator';
 import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
 import { RtGuard } from 'src/common/guards/rt.guard';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiResponse } from '@nestjs/swagger';
-import { CreateUserDto } from '../users/dto/create-user.dto';
-import { LoginDto } from './dto/login.dto'; 
 
 @ApiTags('Authentication') 
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  // ==================== LOCAL AUTH ====================
+
   @Public()
   @Post('register')
-  @ApiOperation({ summary: 'Đăng ký tài khoản mới' })
-  @ApiResponse({ status: 201, description: 'Đăng ký thành công và trả về bộ Token' })
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Đăng ký tài khoản mới bằng Email/Password' })
+  @ApiResponse({ status: 201, description: 'Đăng ký thành công' })
   register(@Body() dto: CreateUserDto) {
     return this.authService.signUp(dto);
   }
@@ -23,16 +47,18 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Đăng nhập vào hệ thống' })
+  @ApiOperation({ summary: 'Đăng nhập bằng Email/Password' })
   @ApiBody({ type: LoginDto }) 
   login(@Body() dto: LoginDto) {
     return this.authService.signIn(dto);
   }
 
+  // ==================== TOKEN MGMT ====================
+
   @Post('logout')
   @ApiBearerAuth() 
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Đăng xuất (Xóa Refresh Token trong DB)' })
+  @ApiOperation({ summary: 'Đăng xuất (Xóa Refresh Token)' })
   logout(@GetCurrentUser('sub') userId: string) {
     return this.authService.logout(userId);
   }
@@ -48,5 +74,27 @@ export class AuthController {
     @GetCurrentUser('refreshToken') rt: string,
   ) {
     return this.authService.refreshTokens(userId, rt);
+  }
+
+  // ==================== SOCIAL AUTH ====================
+
+  @Public()
+  @Post('facebook')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Đăng nhập bằng Facebook (Mobile Access Token)' })
+  @ApiBody({ type: FacebookLoginDto })
+  @ApiResponse({ status: 200, type: SocialLoginResponseDto })
+  facebookLogin(@Body() dto: FacebookLoginDto) {
+    return this.authService.facebookLogin(dto);
+  }
+
+  @Public()
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Đăng nhập bằng Google (Mobile Access Token)' })
+  @ApiBody({ type: GoogleLoginDto })
+  @ApiResponse({ status: 200, type: SocialLoginResponseDto })
+  googleLogin(@Body() dto: GoogleLoginDto) {
+    return this.authService.googleLogin(dto);
   }
 }

@@ -85,16 +85,16 @@ export class JourneysController {
 
   @Get(':id/budget')
   @Public()
-  @ApiOperation({ summary: '7. Ước tính chi phí hành trình (Accommodation, Dining, Activities, Transportation)' })
+  @ApiOperation({ summary: '7. Ước tính chi phí hành trình (Tự động chia đều cho thành viên nhóm)' })
   @ApiParam({ name: 'id', description: 'ID của Journey' })
-  @ApiQuery({ name: 'members', required: false, type: Number, description: 'Số thành viên (default: 1)' })
+  @ApiQuery({ name: 'members', required: false, type: Number, description: 'Số thành viên (tùy chọn - mặc định từ journey.members)' })
   @ApiQuery({ name: 'includeAccommodation', required: false, type: Boolean, description: 'Tính toán lưu trú (default: true)' })
   async getBudgetEstimate(
     @Param('id') journeyId: string,
     @Query('members') memberCount?: string,
     @Query('includeAccommodation') includeAccommodation?: string,
   ) {
-    const members = memberCount ? parseInt(memberCount, 10) : 1;
+    const members = memberCount ? parseInt(memberCount, 10) : undefined;
     const withAccommodation = includeAccommodation !== 'false';
     return this.costEstimationService.estimateJourneyBudget(
       journeyId,
