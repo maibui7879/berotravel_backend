@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
-import { JourneysService } from './journey.service';
+import { JourneysService } from './services/journey.service';
 import { CostEstimationService } from './services/cost-estimation.service';
 import { Role } from 'src/common/constants';
 import { Public } from 'src/common/decorators/public.decorator';
