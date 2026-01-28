@@ -76,25 +76,4 @@ export class AuthController {
     return this.authService.refreshTokens(userId, rt);
   }
 
-  // ==================== SOCIAL AUTH ====================
-
-  @Public()
-  @Post('facebook')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Đăng nhập bằng Facebook (Mobile Access Token)' })
-  @ApiBody({ type: FacebookLoginDto })
-  @ApiResponse({ status: 200, type: SocialLoginResponseDto })
-  facebookLogin(@Body() dto: FacebookLoginDto) {
-    return this.authService.facebookLogin(dto);
-  }
-
-  @Public()
-  @Post('google')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Đăng nhập bằng Google (Mobile Access Token)' })
-  @ApiBody({ type: GoogleLoginDto })
-  @ApiResponse({ status: 200, type: SocialLoginResponseDto })
-  googleLogin(@Body() dto: GoogleLoginDto) {
-    return this.authService.googleLogin(dto);
-  }
 }

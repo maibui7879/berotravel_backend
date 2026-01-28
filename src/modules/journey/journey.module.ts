@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 // Controller
@@ -22,27 +22,27 @@ import { Availability } from '../bookings/entities/availability.entity';
 // External Modules
 import { GroupsModule } from '../group/group.module';
 import { UsersModule } from '../users/users.module';
-import { NotificationsModule } from '../notification/notification.module'; // [FIX 2] Import NotificationsModule
+import { NotificationsModule } from '../notification/notification.module'; 
 import { BookingsModule } from '../bookings/bookings.module';
+import { JourneyTrackingService } from './services/journey-tracking.service';
 @Module({
   imports: [
-    // Khai báo các Entity để Service dùng @InjectRepository
     TypeOrmModule.forFeature([Journey, Place, InventoryUnit, Availability]),
     
-    GroupsModule,
+    forwardRef(() => GroupsModule),
     UsersModule,
     NotificationsModule,
-    BookingsModule // [FIX 2] Cần module này để inject NotificationsService
+    BookingsModule 
   ],
   controllers: [JourneysController],
   providers: [
-    JourneysService,       // Service chính (Orchestrator)
-    CostEstimationService, // Service tính toán chi phí
+    JourneysService,       
+    CostEstimationService, 
     
-    // [FIX 1] Phải khai báo 3 service này vào providers thì NestJS mới khởi tạo được
     JourneyAccessService,
     JourneySchedulerService,
     JourneyBudgetService,
+    JourneyTrackingService,
   ],
   exports: [
     JourneysService, 

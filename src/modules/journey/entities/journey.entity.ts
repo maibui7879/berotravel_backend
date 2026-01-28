@@ -13,6 +13,18 @@ export enum CostType {
   PER_PERSON = 'PER_PERSON'  
 }
 
+// [NEW] Enum cho trạng thái Stop (Checklist)
+export enum StopStatus {
+  PENDING = 'PENDING',   // Chưa đến
+  ARRIVED = 'ARRIVED',   // Đã đến (Check-in)
+  SKIPPED = 'SKIPPED'    // Bỏ qua
+}
+
+export enum JourneyVisibility {
+  PRIVATE = 'PRIVATE', // Chỉ thành viên mới thấy
+  PUBLIC = 'PUBLIC'    // Ai cũng thấy, ai cũng có thể Request Join
+}
+
 export interface JourneyStop {
   _id: string; 
   place_id: string;
@@ -26,15 +38,38 @@ export interface JourneyStop {
   transit_from_previous?: TransitInfo | null;
   is_manual_transit?: boolean;
   
-  // [OPTIONAL] Có thể thêm trường này để lưu thông tin place snapshot (tránh query lại)
-  // place_snapshot?: { name: string; address: string; category: string }; 
+  // [NEW] Tracking Fields
+  status: StopStatus;
+  actual_arrival_time?: Date | null;
+  actual_cost?: number;
+  check_in_image?: string | null;
 }
 
 export interface JourneyDay {
-  id: string; // [UPDATE] Thêm ID cho ngày (hỗ trợ Frontend key)
+  id: string;
   day_number: number;
   date: Date;
   stops: JourneyStop[];
+  warnings?: string[];
+}
+
+export interface BudgetBreakdown {
+  total_shared: number;          // Tổng chi phí chung
+  share_per_person: number;      // Tiền chung chia đầu người
+  total_personal: number;        // Tổng chi phí riêng
+  grand_total_per_person: number;// Tổng cộng 1 người
+  is_over_budget: boolean;       // Cờ cảnh báo
+  over_amount: number;           // Số tiền vượt
+}
+
+// [NEW] Enum cho trạng thái Journey
+export enum JourneyStatus {
+  PLANNING = 'PLANNING',   // Đang lên kế hoạch
+  UPCOMING = 'UPCOMING',   // Sắp đi
+  ON_GOING = 'ON_GOING',   // Đang đi (Active)
+  PAUSED = 'PAUSED',       // Tạm dừng
+  COMPLETED = 'COMPLETED', // Đã xong
+  CANCELLED = 'CANCELLED'  // Hủy
 }
 
 @Entity('journeys')
@@ -49,7 +84,7 @@ export class Journey {
   owner_id: string;
 
   @Column('array', { default: [] }) 
-  members: string[]; // Lưu user_id dưới dạng string
+  members: string[];
 
   @Column() 
   start_date: Date;
@@ -57,21 +92,40 @@ export class Journey {
   @Column({ default: 1 }) 
   planned_members_count: number;
 
+  @Column({ nullable: true }) 
+  group_id: string;
+
   @Column() 
   end_date: Date;
   
   @Column('json') 
-  days: JourneyDay[]; // Lưu trữ phân cấp Ngày -> Stops
+  days: JourneyDay[];
 
+  @Column({ default: 0 })
+  budget_limit: number; 
+
+  @Column('json', { nullable: true })
+  budget_analysis: BudgetBreakdown;
+  
   @Column({ default: 0 }) 
-  total_budget: number; // Tổng chi phí toàn bộ chuyến đi
+  total_budget: number;
 
-  // [NEW] Chi phí bình quân đầu người (total_budget / members.length)
   @Column({ default: 0 }) 
   cost_per_person: number; 
 
-  @Column({ default: 'PRIVATE' }) 
-  status: 'PRIVATE' | 'PUBLIC' | 'GROUP';
+  // [NEW] Tracking Status
+  @Column({ type: 'enum', enum: JourneyStatus, default: JourneyStatus.PLANNING })
+  status: JourneyStatus;
+
+  // [NEW] Progress Tracking
+  @Column({ default: 0 })
+  completed_stops_count: number; 
+
+  @Column({ type: 'enum', enum: JourneyVisibility, default: JourneyVisibility.PRIVATE })
+  visibility: JourneyVisibility;
+  
+  @Column({ default: 0 })
+  total_stops_count: number;
 
   @CreateDateColumn() 
   created_at: Date;

@@ -204,4 +204,35 @@ export class BookingsService {
     );
     return { success: true };
   }
+  
+  async releaseBookingSlot(placeId: string, dateStr: string, quantity: number = 1) {
+    // 1. Tìm Inventory Unit của Place
+    const units = await this.unitRepo.find({ where: { place_id: placeId } });
+    if (!units || units.length === 0) return; 
+
+    // Giả định: Lấy Unit đầu tiên (Hoặc logic phức tạp hơn cần lưu unit_id vào Stop)
+    const unit = units[0];
+
+    // 2. Tìm Availability record
+    // Lưu ý: Date trong DB lưu dạng Date object (0h00), dateStr truyền vào là chuỗi 'YYYY-MM-DD'
+    const targetDate = new Date(new Date(dateStr).setHours(0,0,0,0));
+
+    const availability = await this.availRepo.findOne({ 
+        where: { unit_id: unit._id.toString(), date: targetDate } 
+    });
+
+    if (availability) {
+        // 3. Cộng lại kho
+        availability.available_count += quantity;
+        availability.booked_count = Math.max(0, (availability.booked_count || 0) - quantity);
+
+        // Cap ở max inventory
+        if (availability.available_count > unit.total_inventory) {
+            availability.available_count = unit.total_inventory;
+        }
+        
+        await this.availRepo.save(availability);
+    }
+  }
+  
 }

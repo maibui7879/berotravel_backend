@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
-import { Journey } from '../entities/journey.entity';
+import { Journey, JourneyVisibility } from '../entities/journey.entity';
 
 @Injectable()
 export class JourneyAccessService {
@@ -16,11 +16,23 @@ export class JourneyAccessService {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
 
+    // 1. Check Owner/Member
     const isOwner = journey.owner_id === userId;
     const isMember = journey.members.includes(userId);
 
-    if (mode === 'EDIT' && !isOwner && !isMember) {
-      throw new ForbiddenException('Bạn không có quyền chỉnh sửa hành trình này');
+    // 2. Logic quyền truy cập
+    if (mode === 'EDIT') {
+        if (!isOwner && !isMember) {
+            throw new ForbiddenException('Bạn không có quyền chỉnh sửa hành trình này');
+        }
+    } else {
+        // Mode VIEW
+        if (!isOwner && !isMember) {
+            // Nếu không phải thành viên, chỉ cho xem nếu là PUBLIC
+            if (journey.visibility !== JourneyVisibility.PUBLIC) {
+                throw new ForbiddenException('Hành trình này là riêng tư');
+            }
+        }
     }
 
     return journey;

@@ -56,11 +56,7 @@ export class User {
   @Column({ type: 'array', default: ['email'] })
   authProviders: AuthProvider[];
 
-  @Column('json', { nullable: true })
-  socialProfiles: {
-    facebook?: SocialProfile;
-    google?: SocialProfile;
-  };
+
 
   @Column({ nullable: true, select: false })
   hashedRt: string | null;

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
@@ -12,12 +12,7 @@ export class JourneySchedulerService {
     @InjectRepository(Place) private readonly placeRepo: MongoRepository<Place>,
   ) {}
 
-  /**
-   * Tính toán lại toàn bộ lịch trình (Core Logic)
-   * Hàm này sẽ thay đổi trực tiếp object Journey (pass by reference)
-   */
   async recalculateEntireJourney(journey: Journey): Promise<void> {
-    // 1. Bulk Fetch Places để tối ưu DB query
     const allPlaceIds = journey.days
       .flatMap(d => d.stops.map(s => s.place_id))
       .filter(id => ObjectId.isValid(id))
@@ -26,15 +21,16 @@ export class JourneySchedulerService {
     const places = await this.placeRepo.find({ where: { _id: { $in: allPlaceIds } } as any });
     const placeMap = new Map(places.map(p => [p._id.toString(), p]));
 
-    // 2. Sắp xếp ngày
     journey.days.sort((a, b) => a.day_number - b.day_number);
-
-    // 3. Vòng lặp chính qua các ngày
     let lastStopOfPrevDay: JourneyStop | null = null;
 
     for (const day of journey.days) {
+      // Reset warnings mỗi lần tính lại
+      day.warnings = []; 
+      
       this.recalculateSingleDay(day, placeMap, lastStopOfPrevDay);
-      // Cập nhật điểm cuối cùng để làm đầu vào cho ngày hôm sau
+      
+      // Update last stop để dùng cho ngày tiếp theo
       if (day.stops.length > 0) {
         lastStopOfPrevDay = day.stops[day.stops.length - 1];
       }
@@ -50,17 +46,30 @@ export class JourneySchedulerService {
 
     for (let i = 0; i < day.stops.length; i++) {
       const currentStop = day.stops[i];
+      // Nếu là stop đầu tiên của ngày -> So sánh với stop cuối ngày trước
+      // Nếu không -> So sánh với stop liền trước trong cùng ngày
       const prevStop = i === 0 ? prevDayLastStop : day.stops[i - 1];
       const isFirstStopOfDay = i === 0;
 
-      // Tính toán Transit & Start Time
+      // Lưu EndTime gốc user gửi lên để validate
+      const userOriginalEndTime = currentStop.end_time;
+
+      // 1. Tính Start Time
       this.calculateTransitAndStartTime(currentStop, prevStop, placeMap, isFirstStopOfDay);
 
-      // Tính toán End Time
-      this.calculateEndTime(currentStop);
+      // 2. Validate Logic
+      if (userOriginalEndTime) {
+          this.validateTimeConstraints(day, currentStop, userOriginalEndTime);
+      }
+
+      // 3. Tính End Time
+      this.calculateEndTime(currentStop, userOriginalEndTime);
 
       currentStop.sequence = i + 1;
     }
+
+    // 4. Phân tích mật độ
+    this.analyzeScheduleDensity(day);
   }
 
   private calculateTransitAndStartTime(
@@ -71,28 +80,27 @@ export class JourneySchedulerService {
   ) {
     const originalStartTime = currentStop.start_time;
 
-    // A. Nếu không có điểm trước đó (Ngày 1, Stop 1)
+    // Nếu không có điểm trước (Ngày 1, Stop 1), không tính transit
     if (!prevStop) {
       currentStop.transit_from_previous = null;
       if (!currentStop.start_time) currentStop.start_time = '08:00';
       return;
     }
 
-    // B. Tính toán Transit
     const prevPlace = placeMap.get(prevStop.place_id);
     const currentPlace = placeMap.get(currentStop.place_id);
     
-    let travelMinutes = 30; // Default fallback
+    let travelMinutes = 30; 
     let distanceVal = 0;
     let mode = 'DRIVING';
 
-    // B1. Ưu tiên Manual Input
+    // Ưu tiên Manual Transit (nếu user nhập tay)
     if (currentStop.is_manual_transit && currentStop.transit_from_previous?.duration_minutes) {
       travelMinutes = currentStop.transit_from_previous.duration_minutes;
       distanceVal = currentStop.transit_from_previous.distance_km || 0;
       mode = currentStop.transit_from_previous.mode;
     }
-    // B2. Auto Calculate
+    // Tính tự động bằng Haversine
     else if (prevPlace?.location?.coordinates && currentPlace?.location?.coordinates) {
       distanceVal = JourneyUtils.getHaversineDistance(
         prevPlace.location.coordinates[1], prevPlace.location.coordinates[0],
@@ -111,32 +119,79 @@ export class JourneySchedulerService {
       from_place_id: prevStop.place_id,
     };
 
-    // C. Tính Start Time
-    let baseTime = isFirstStopOfDay ? '08:00' : prevStop.end_time;
-    const arrivalTime = JourneyUtils.addMinutesToTime(baseTime, travelMinutes);
-
-    const diffMinutes = JourneyUtils.compareTime(originalStartTime, arrivalTime);
-
-    // Logic GAP:
-    // 1. Chưa nhập -> Lấy arrival
-    // 2. Nhập sớm hơn arrival (Vô lý) -> Lấy arrival
-    // 3. Nhập muộn hơn arrival quá 30p (Gap lớn) -> Lấy arrival (kéo lại cho gọn)
-    // 4. Nhập muộn hơn <= 30p -> Giữ nguyên (User muốn nghỉ ngơi)
-    if (!originalStartTime || diffMinutes < 0 || diffMinutes > 30) {
-      currentStop.start_time = arrivalTime;
+    let baseTime;
+    if (isFirstStopOfDay) {
+ 
+         baseTime = '08:00';
+         if (!originalStartTime) currentStop.start_time = '08:00';
+         return; 
     } else {
-      currentStop.start_time = originalStartTime;
+         baseTime = prevStop.end_time;
+         
+         const arrivalTime = JourneyUtils.addMinutesToTime(baseTime, travelMinutes);
+         const diffMinutes = JourneyUtils.compareTime(originalStartTime, arrivalTime);
+    
+         // Nếu user không nhập giờ, hoặc giờ nhập không hợp lý (đến quá sớm hoặc quá muộn) -> Auto sửa
+         if (!originalStartTime || diffMinutes < 0 || diffMinutes > 30) {
+           currentStop.start_time = arrivalTime;
+         } else {
+           currentStop.start_time = originalStartTime;
+         }
     }
   }
 
-  private calculateEndTime(currentStop: JourneyStop) {
-    const originalEndTime = currentStop.end_time;
-    // Nếu EndTime cũ vẫn hợp lý (lớn hơn StartTime mới) -> Giữ nguyên
-    if (originalEndTime && JourneyUtils.compareTime(currentStop.start_time, originalEndTime) < 0) {
-      currentStop.end_time = originalEndTime;
+  private validateTimeConstraints(day: JourneyDay, currentStop: JourneyStop, userEndTime: string) {
+      const startMins = this.timeToMinutes(currentStop.start_time);
+      const endMins = this.timeToMinutes(userEndTime);
+
+      // CASE 1: Start > End -> CHẶN
+      if (startMins > endMins) {
+          throw new BadRequestException(
+              `Không thể di chuyển kịp! Bạn đến nơi lúc ${currentStop.start_time} nhưng lại muốn kết thúc lúc ${userEndTime}. Vui lòng chọn địa điểm gần hơn hoặc kéo dài thời gian.`
+          );
+      }
+
+      // CASE 2: Duration < 30p -> WARNING
+      const duration = endMins - startMins;
+      if (duration < 30) {
+          day.warnings?.push(
+              `Cảnh báo: Thời gian tại địa điểm thứ ${currentStop.sequence} quá ngắn (${duration} phút).`
+          );
+      }
+  }
+
+  private calculateEndTime(currentStop: JourneyStop, userOriginalEndTime: string | null) {
+    if (userOriginalEndTime && JourneyUtils.compareTime(currentStop.start_time, userOriginalEndTime) < 0) {
+      currentStop.end_time = userOriginalEndTime;
     } else {
-      // Nếu bị lố -> +60p mặc định
       currentStop.end_time = JourneyUtils.addMinutesToTime(currentStop.start_time, 60);
     }
+  }
+
+  private analyzeScheduleDensity(day: JourneyDay) {
+    const stops = day.stops;
+    if (stops.length === 0) return;
+
+    const lastStop = stops[stops.length - 1];
+    const firstStop = stops[0];
+
+    // Cảnh báo giờ giấc
+    if (this.timeToMinutes(lastStop.end_time) > 22 * 60) {
+       day.warnings?.push('Lịch trình kết thúc quá muộn (sau 22:00).');
+    }
+    if (this.timeToMinutes(firstStop.start_time) < 5 * 60) {
+       day.warnings?.push('Lịch trình bắt đầu quá sớm (trước 05:00).');
+    }
+
+    // Cảnh báo số lượng
+    if (stops.length > 8) {
+       day.warnings?.push(`Lịch trình dày đặc (${stops.length} địa điểm).`);
+    }
+  }
+
+  private timeToMinutes(time: string | null): number {
+      if (!time) return 0;
+      const [h, m] = time.split(':').map(Number);
+      return h * 60 + m;
   }
 }

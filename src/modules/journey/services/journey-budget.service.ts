@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Journey, CostType } from '../entities/journey.entity';
+import { Journey, CostType, BudgetBreakdown } from '../entities/journey.entity';
 import { CostEstimationService } from './cost-estimation.service';
 
 @Injectable()
@@ -8,21 +8,60 @@ export class JourneyBudgetService {
 
   async syncSmartBudget(journey: Journey): Promise<void> {
     try {
-      // 1. Xác định số người (Lấy max giữa thực tế và dự kiến để an toàn)
-      const realCount = journey.members?.length || 1;
-      const plannedCount = journey.planned_members_count || 1;
-      const calcCount = Math.max(realCount, plannedCount);
+      const memberCount = Math.max(journey.members?.length || 1, journey.planned_members_count || 1);
 
-      // 2. Gọi thuật toán tính toán
       const estimation = await this.costService.estimateJourneyBudget(
         journey._id.toString(),
-        true, // Include Accommodation
-        calcCount,
+        true, 
+        memberCount,
       );
 
-      // 3. Cập nhật vào Entity
-      journey.total_budget = estimation.summary.grand_total;
-      journey.cost_per_person = estimation.summary.cost_per_person;
+      let tempStopShared = 0;
+      let tempStopPersonal = 0;
+
+      journey.days.forEach(day => {
+        day.stops.forEach(stop => {
+          const cost = stop.estimated_cost || 0;
+          if (cost === 0) return;
+
+          if (stop.cost_type === CostType.SHARED) {
+            tempStopShared += cost;
+          } else {
+            tempStopPersonal += cost;
+          }
+        });
+      });
+
+      const finalShared = 
+          estimation.accommodation.reduce((s, i) => s + i.subtotal, 0) +
+          estimation.transportation.filter(t => t.is_shared).reduce((s, i) => s + i.estimated_cost, 0) +
+          tempStopShared;
+
+      const transportPrivateTotal = estimation.transportation.filter(t => !t.is_shared).reduce((s, i) => s + i.estimated_cost, 0);
+      
+      const finalPersonal = 
+          (transportPrivateTotal / memberCount) + 
+          tempStopPersonal;
+
+      const sharePerPerson = Math.ceil(finalShared / memberCount);
+      const grandTotalPerPerson = sharePerPerson + finalPersonal;
+      
+      const limit = journey.budget_limit || 0;
+      const isOver = limit > 0 && grandTotalPerPerson > limit;
+
+      const analysis: BudgetBreakdown = {
+          total_shared: finalShared,
+          share_per_person: sharePerPerson,
+          total_personal: finalPersonal,
+          grand_total_per_person: grandTotalPerPerson,
+          is_over_budget: isOver,
+          over_amount: isOver ? (grandTotalPerPerson - limit) : 0
+      };
+
+      journey.budget_analysis = analysis;
+      journey.total_budget = finalShared + (finalPersonal * memberCount);
+      journey.cost_per_person = grandTotalPerPerson;
+
     } catch (error) {
       console.warn('Smart Budget Error:', error.message);
       this.fallbackBudgetCalculation(journey);
@@ -32,15 +71,35 @@ export class JourneyBudgetService {
   private fallbackBudgetCalculation(journey: Journey) {
     const calcCount = Math.max(journey.members?.length || 1, journey.planned_members_count || 1);
     
-    const simpleTotal = journey.days.reduce((t, d) =>
-      t + d.stops.reduce((s, st) => {
-        const cost = st.estimated_cost || 0;
-        // Nếu Shared -> Cộng thẳng. Nếu Per Person -> Nhân lên
-        return s + (st.cost_type === CostType.PER_PERSON ? cost * calcCount : cost);
-      }, 0), 0
-    );
+    let totalShared = 0;
+    let totalPersonal = 0;
 
-    journey.total_budget = simpleTotal;
-    journey.cost_per_person = Math.round(simpleTotal / calcCount);
+    journey.days.forEach(d => {
+        d.stops.forEach(st => {
+            const cost = st.estimated_cost || 0;
+            if (st.cost_type === CostType.SHARED) {
+                totalShared += cost;
+            } else {
+                totalPersonal += cost;
+            }
+        });
+    });
+
+    const sharePerPerson = Math.ceil(totalShared / calcCount);
+    const grandTotalPerPerson = sharePerPerson + totalPersonal;
+    const limit = journey.budget_limit || 0;
+    const isOver = limit > 0 && grandTotalPerPerson > limit;
+
+    journey.budget_analysis = {
+        total_shared: totalShared,
+        share_per_person: sharePerPerson,
+        total_personal: totalPersonal,
+        grand_total_per_person: grandTotalPerPerson,
+        is_over_budget: isOver,
+        over_amount: isOver ? (grandTotalPerPerson - limit) : 0
+    };
+
+    journey.total_budget = totalShared + (totalPersonal * calcCount);
+    journey.cost_per_person = grandTotalPerPerson;
   }
 }

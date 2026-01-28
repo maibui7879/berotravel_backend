@@ -28,7 +28,7 @@ export class GroupsController {
   @Post(':id/request')
   @ApiOperation({ summary: 'Gửi yêu cầu tham gia (Chờ duyệt)' })
   requestJoin(@Param('id') id: string, @GetCurrentUser('sub') userId: string) {
-    return this.groupsService.requestJoin(id, userId);
+    return this.groupsService.requestToJoin(id, userId);
   }
 
   @Post(':id/approve')

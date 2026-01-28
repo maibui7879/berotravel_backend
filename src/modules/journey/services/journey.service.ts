@@ -1,28 +1,25 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 
-// Entities & DTOs
-import { Journey, JourneyDay, JourneyStop, TransitInfo, CostType } from '../entities/journey.entity';
-import { Place } from '../../places/entities/place.entity'; // [IMPORTANT] Cần Place Entity để validate
+import { Journey, JourneyDay, JourneyStop, CostType, StopStatus, JourneyVisibility } from '../entities/journey.entity';
+import { Place } from '../../places/entities/place.entity';
 import { CreateJourneyDto } from '../dto/create-journey.dto';
 import { UpdateJourneyDto } from '../dto/update-journey.dto';
 import { AddStopDto } from '../dto/add-stop.dto';
 import { MoveStopDto } from '../dto/move-stop.dto';
+import { CreateJoinRequestDto, ReplyJoinRequestDto, ReplyStatus } from '../dto/social-journey.dto';
 import { Role } from 'src/common/constants';
 
-// Sub-Services
 import { GroupsService } from '../../group/group.service';
 import { NotificationsService } from '../../notification/notification.service';
 import { UsersService } from '../../users/users.service';
-import { JourneyAccessService } from '../services/journey-access.service';
-import { JourneySchedulerService } from '../services/journey-scheduler.service';
-import { JourneyBudgetService } from '../services/journey-budget.service';
-import { JourneyUtils } from '../services/journey-utils';
+import { JourneyAccessService } from './journey-access.service';
+import { JourneySchedulerService } from './journey-scheduler.service';
+import { JourneyBudgetService } from './journey-budget.service';
+import { JourneyUtils } from './journey-utils';
 import { NotificationType } from '../../notification/entities/notification.entity';
-
-// [NEW] Import Service Booking
 import { BookingsService } from '../../bookings/bookings.service';
 
 interface CurrentUser {
@@ -34,24 +31,22 @@ interface CurrentUser {
 export class JourneysService {
   constructor(
     @InjectRepository(Journey) private readonly journeyRepo: MongoRepository<Journey>,
-    @InjectRepository(Place) private readonly placeRepo: MongoRepository<Place>, // Inject Place Repo
+    @InjectRepository(Place) private readonly placeRepo: MongoRepository<Place>,
     
-    // Core Logic Services
     private readonly accessService: JourneyAccessService,
     private readonly schedulerService: JourneySchedulerService,
     private readonly budgetService: JourneyBudgetService,
 
-    // External Services
+    @Inject(forwardRef(() => GroupsService))
     private readonly groupsService: GroupsService,
+
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
-    
-    // [NEW] Inject Booking Service để check phòng
     private readonly bookingsService: BookingsService,
   ) {}
 
   // =================================================================
-  // PHẦN 1: CORE CRUD
+  // CORE CRUD
   // =================================================================
 
   async create(dto: CreateJourneyDto, userId: string): Promise<Journey> {
@@ -76,10 +71,17 @@ export class JourneysService {
       total_budget: 0,
       cost_per_person: 0,
       planned_members_count: dto.planned_members_count || 1,
+      visibility: JourneyVisibility.PRIVATE
     });
-
     const savedJourney = await this.journeyRepo.save(journey);
-    this.groupsService.create({ name: `Nhóm: ${dto.name}`, journey_id: savedJourney._id.toString() }, userId).catch(console.error);
+
+    const group = await this.groupsService.create({ 
+        name: `Nhóm: ${dto.name}`, 
+        journey_id: savedJourney._id.toString() 
+    }, userId);
+
+    savedJourney.group_id = group._id.toString();
+
     return savedJourney;
   }
 
@@ -94,11 +96,26 @@ export class JourneysService {
     });
   }
 
+  async getPublicJourneys(search?: string): Promise<Journey[]> {
+    const filter: any = { 
+        visibility: JourneyVisibility.PUBLIC 
+    };
+
+    if (search) {
+        filter.name = { $regex: new RegExp(search, 'i') };
+    }
+
+    return await this.journeyRepo.find({
+        where: filter,
+        order: { created_at: -1 } as any,
+        take: 50 
+    });
+  }
+
   async update(id: string, dto: UpdateJourneyDto, userId: string): Promise<Journey> {
     const journey = await this.accessService.getJourneyWithAccess(id, userId, 'EDIT');
     Object.assign(journey, dto);
 
-    // [LOGIC] Nếu thay đổi số người dự kiến -> Tính lại tiền
     if (dto.planned_members_count !== undefined) {
       await this.budgetService.syncSmartBudget(journey);
     }
@@ -113,112 +130,129 @@ export class JourneysService {
     if (!journey) throw new BadRequestException('Not Found');
     if (journey.owner_id !== user.sub && user.role !== Role.ADMIN) throw new BadRequestException('Forbidden');
     
+    for (const day of journey.days) {
+        const dateStr = new Date(day.date).toISOString().split('T')[0];
+        for (const stop of day.stops) {
+            if (stop.status === StopStatus.PENDING) {
+                await this.bookingsService.releaseBookingSlot(
+                    stop.place_id, 
+                    dateStr, 
+                    journey.members.length || 1
+                );
+            }
+        }
+    }
+
     await this.journeyRepo.delete(new ObjectId(id));
     return { success: true };
   }
+  
+  // SOCIAL: PUBLIC JOIN REQUESTS (VIA GROUP)
+  async sendJoinRequest(journeyId: string, userId: string, dto: CreateJoinRequestDto) {
+    const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+    if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+    
+    if (journey.visibility !== JourneyVisibility.PUBLIC) {
+        throw new BadRequestException('Hành trình này không công khai');
+    }
 
-  // =================================================================
-  // PHẦN 2: COMPLEX LOGIC (ADD STOP)
-  // =================================================================
+    if (!journey.group_id) throw new BadRequestException('Hành trình chưa được liên kết nhóm chat');
+    if (journey.owner_id === userId) throw new BadRequestException('Bạn là chủ sở hữu');
 
+    await this.groupsService.requestToJoin(journey.group_id, userId);
+
+    this.notifyMembers(journey, journey.owner_id, `muốn tham gia hành trình: "${dto.message || ''}"`, undefined, userId);
+
+    return { success: true, message: 'Đã gửi yêu cầu tham gia' };
+  }
+
+  async getPendingRequests(journeyId: string, userId: string) {
+    const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+    if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+    if (!journey.group_id) return [];
+    
+    return await this.groupsService.getPendingRequests(journey.group_id, userId);
+  }
+
+  async replyJoinRequest(journeyId: string, requestUserId: string, userId: string, dto: ReplyJoinRequestDto) {
+    const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+    if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+    if (!journey.group_id) throw new BadRequestException('Hành trình lỗi: Không có Group ID');
+
+    if (dto.status === ReplyStatus.REJECTED) {
+        await this.groupsService.rejectRequest(journey.group_id, { member_id: requestUserId }, userId);
+        
+        this.notificationsService.createAndSend({
+            recipient_id: requestUserId,
+            sender_id: userId,
+            type: NotificationType.SYSTEM,
+            title: 'Yêu cầu tham gia',
+            message: `Yêu cầu tham gia "${journey.name}" đã bị từ chối.`,
+            metadata: { journey_id: journeyId }
+        });
+    } else {
+        await this.groupsService.approveRequest(journey.group_id, { member_id: requestUserId }, userId);
+
+        this.notificationsService.createAndSend({
+            recipient_id: requestUserId,
+            sender_id: userId,
+            type: NotificationType.SYSTEM,
+            title: 'Yêu cầu tham gia',
+            message: `Yêu cầu tham gia "${journey.name}" đã được chấp nhận!`,
+            metadata: { journey_id: journeyId }
+        });
+    }
+
+    return { success: true, status: dto.status };
+  }
+
+  // COMPLEX LOGIC (STOPS)
   async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
-
-    // 1. Validate Place Existence (Fail-Fast)
-    if (!ObjectId.isValid(dto.place_id)) throw new BadRequestException('Place ID không hợp lệ');
-    const placeExists = await this.placeRepo.findOne({ 
-        where: { _id: new ObjectId(dto.place_id) },
-        select: ['_id'] as any 
-    });
-    if (!placeExists) throw new NotFoundException('Địa điểm không tồn tại trong hệ thống');
-
-    const day = journey.days[dto.day_index];
-    if (!day) throw new BadRequestException('Ngày không hợp lệ');
-
-    // ==================================================================
-    // [LOGIC] CHECK AVAILABILITY (Booking Check)
-    // ==================================================================
-    const targetDate = new Date(day.date); 
-    const dateStr = targetDate.toISOString().split('T')[0]; // Format YYYY-MM-DD
-
-    // Gọi Booking Service
-    const availabilityInfo = await this.bookingsService.getPlaceAvailability(dto.place_id, dateStr);
-
-    // Nếu availabilityInfo có dữ liệu -> Place này có quản lý kho (Hotel/Restaurant/Tour)
-    if (availabilityInfo && availabilityInfo.length > 0) {
-        // Kiểm tra xem có bất kỳ Unit nào còn trống không
-        const hasAnySlot = availabilityInfo.some(unit => {
-            const dayStatus = unit.availability.find(d => d.date === dateStr);
-            return dayStatus && dayStatus.available_count > 0;
-        });
-
-        if (!hasAnySlot) {
-            throw new BadRequestException(
-                `Địa điểm này đã HẾT CHỖ (Full Booking) vào ngày ${dateStr}. Vui lòng chọn ngày khác hoặc địa điểm khác.`
-            );
-        }
-    }
-    // ==================================================================
-
-    if (day.stops.length === 0 && !dto.start_time) {
-      throw new BadRequestException('Điểm đầu tiên bắt buộc phải có Start Time');
-    }
-
-    // Prepare Data
-    const finalCost = (dto.is_manual_cost && dto.estimated_cost !== undefined) ? dto.estimated_cost : 0;
-    const isManualCost = !!(dto.is_manual_cost && dto.estimated_cost !== undefined);
     
-    let defaultCostType = CostType.PER_PERSON;
-    if (['DRIVING', 'BOAT'].includes(dto.transit_mode || '')) defaultCostType = CostType.SHARED;
+    if (!ObjectId.isValid(dto.place_id)) throw new BadRequestException('Place ID không hợp lệ');
+    const placeExists = await this.placeRepo.findOne({ where: { _id: new ObjectId(dto.place_id) }, select: ['_id'] as any });
+    if (!placeExists) throw new NotFoundException('Địa điểm không tồn tại');
+    
+    const day = journey.days[dto.day_index];
+    const dateStr = new Date(day.date).toISOString().split('T')[0];
+    const availabilityInfo = await this.bookingsService.getPlaceAvailability(dto.place_id, dateStr);
+    
+    if (availabilityInfo && availabilityInfo.length > 0) {
+      const hasSlot = availabilityInfo.some(u => {
+        const dayStatus = u.availability.find(d => d.date === dateStr);
+        return (dayStatus?.available_count ?? 0) > 0;
+      });
 
-    let finalStartTime = dto.start_time;
-    const finalEndTime = dto.end_time || '09:00';
-    if (!finalStartTime) {
-       if (day.stops.length > 0 && dto.end_time) {
-          finalStartTime = JourneyUtils.addMinutesToTime(dto.end_time, -60); 
-       } else {
-          finalStartTime = '08:00';
-       }
+      if (!hasSlot) {
+        throw new BadRequestException(`Địa điểm đã HẾT CHỖ ngày ${dateStr}`);
+      }
     }
 
-    let transitInfo: TransitInfo | null = null;
-    let isManualTransit = false;
-    if (dto.transit_mode) {
-      transitInfo = {
-        mode: dto.transit_mode as any,
-        duration_minutes: dto.transit_duration_minutes || 0,
-        distance_km: dto.transit_distance_km || 0,
-        from_place_id: '',
-      };
-      if (dto.transit_duration_minutes && dto.transit_duration_minutes > 0) isManualTransit = true;
-    }
-
-    // Create Entity
+    const finalStartTime = dto.start_time || (day.stops.length > 0 && dto.end_time ? JourneyUtils.addMinutesToTime(dto.end_time, -60) : '08:00');
+    
     const newStop: JourneyStop = {
       _id: new ObjectId().toString(),
       place_id: dto.place_id,
       start_time: finalStartTime,
-      end_time: finalEndTime,
+      end_time: dto.end_time || '09:00',
       note: dto.note,
-      estimated_cost: finalCost,
+      estimated_cost: dto.estimated_cost || 0,
       sequence: day.stops.length + 1,
-      transit_from_previous: transitInfo,
-      is_manual_cost: isManualCost,
-      cost_type: dto.cost_type || defaultCostType,
-      is_manual_transit: isManualTransit,
+      cost_type: dto.cost_type || CostType.PER_PERSON, 
+      transit_from_previous: null,
+      status: StopStatus.PENDING,
     };
-
+    
     day.stops.push(newStop);
 
-    // Call Sub-Services (Logic tách rời)
     await this.schedulerService.recalculateEntireJourney(journey);
     await this.budgetService.syncSmartBudget(journey);
-
     await this.journeyRepo.save(journey);
     this.notifyMembers(journey, userId, 'đã thêm địa điểm mới', dto.day_index + 1);
     return journey;
   }
-
+  
   async moveStop(userId: string, dto: MoveStopDto): Promise<Journey> {
     const journey = await this.accessService.getJourneyWithAccess(dto.journey_id, userId, 'EDIT');
     const fromDay = journey.days.find(d => d.day_number === dto.from_day_number);
@@ -233,7 +267,6 @@ export class JourneysService {
 
     await this.schedulerService.recalculateEntireJourney(journey);
     await this.budgetService.syncSmartBudget(journey);
-
     await this.journeyRepo.save(journey);
     this.notifyMembers(journey, userId, 'đã thay đổi thứ tự lịch trình');
     return journey;
@@ -244,17 +277,38 @@ export class JourneysService {
     const day = journey.days.find(d => d.day_number === dayNumber);
     
     if (day) {
-      day.stops = day.stops.filter(s => s._id !== stopId);
-      await this.schedulerService.recalculateEntireJourney(journey);
-      await this.budgetService.syncSmartBudget(journey);
-      await this.journeyRepo.save(journey);
-      this.notifyMembers(journey, userId, 'đã xóa một địa điểm', dayNumber);
+      const stop = day.stops.find(s => s._id === stopId);
+      
+      if (stop) {
+           if (stop.status === StopStatus.PENDING) {
+                const dateStr = new Date(day.date).toISOString().split('T')[0];
+                await this.bookingsService.releaseBookingSlot(
+                    stop.place_id, 
+                    dateStr, 
+                    journey.members.length || 1
+                );
+           }
+           
+           day.stops = day.stops.filter(s => s._id !== stopId);
+           
+           await this.schedulerService.recalculateEntireJourney(journey);
+           await this.budgetService.syncSmartBudget(journey);
+           await this.journeyRepo.save(journey);
+           this.notifyMembers(journey, userId, 'đã xóa một địa điểm', dayNumber);
+      }
     }
     return { success: true };
   }
 
-  // --- NOTIFICATION HELPER ---
-  private async notifyMembers(journey: Journey, actorId: string, actionText: string, dayNumber?: number) {
+  async refreshJourneyBudget(journeyId: string) {
+     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+     if (!journey) return;
+     
+     await this.budgetService.syncSmartBudget(journey);
+     await this.journeyRepo.save(journey);
+  }
+
+  private async notifyMembers(journey: Journey, actorId: string, actionText: string, dayNumber?: number, senderId?: string) {
     try {
       let actorName = 'Thành viên nhóm';
       const actor = await this.usersService.findOne(actorId).catch(() => null);
@@ -263,7 +317,8 @@ export class JourneysService {
       let message = `${actorName} ${actionText} trong hành trình "${journey.name}"`;
       if (dayNumber) message += ` (Ngày ${dayNumber})`;
       
-      const recipients = journey.members.filter(m => m !== actorId);
+      const recipients = journey.members.filter(m => m !== (senderId || actorId));
+      
       await Promise.all(recipients.map(recipientId =>
         this.notificationsService.createAndSend({
           recipient_id: recipientId,
