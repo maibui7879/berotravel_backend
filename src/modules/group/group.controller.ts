@@ -13,12 +13,6 @@ import { AtGuard } from 'src/common/guards/at.guard';
 export class GroupsController {
   constructor(private readonly groupsService: GroupsService) {}
 
-  @Post()
-  @ApiOperation({ summary: 'Tạo nhóm mới' })
-  create(@Body() dto: CreateGroupDto, @GetCurrentUser('sub') userId: string) {
-    return this.groupsService.create(dto, userId);
-  }
-
   @Post('join')
   @ApiOperation({ summary: 'Tham gia bằng Mã mời (Vào thẳng)' })
   join(@Body() dto: JoinGroupDto, @GetCurrentUser('sub') userId: string) {
@@ -53,12 +47,6 @@ export class GroupsController {
   @ApiOperation({ summary: 'Thành viên tự rời nhóm' })
   leave(@Param('id') id: string, @GetCurrentUser('sub') userId: string) {
     return this.groupsService.leaveGroup(id, userId);
-  }
-
-  @Delete(':id')
-  @ApiOperation({ summary: 'Giải tán nhóm (Chỉ Host)' })
-  disband(@Param('id') id: string, @GetCurrentUser('sub') userId: string) {
-    return this.groupsService.disbandGroup(id, userId);
   }
 
   @Get('journey/:journeyId')

@@ -19,6 +19,12 @@ export class CreateUserDto {
   @IsOptional()
   phoneNumber?: string;
 
+  @ApiPropertyOptional({ example: ['chill', 'view_hồ', 'làm_việc'] })
+  @IsArray()
+  @IsString({ each: true }) // Kiểm tra từng phần tử trong mảng là string
+  @IsOptional()
+  tags?: string[];
+  
   @ApiPropertyOptional({ example: ['Biển', 'Ẩm thực'] })
   @IsOptional()
   @IsArray()

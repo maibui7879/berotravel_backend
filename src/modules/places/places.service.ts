@@ -11,7 +11,7 @@ import { CreatePlaceDto } from './dto/create-place.dto';
 
 import { UserProfileService } from '../users/services/user-profile.service';
 import { Journey } from '../journey/entities/journey.entity';
-import { InjectRepository as InjectJourneyRepository } from '@nestjs/typeorm';
+
 interface CurrentUser {
   sub: string;
   role: Role;
@@ -19,13 +19,16 @@ interface CurrentUser {
 
 @Injectable()
 export class PlacesService {
-constructor(
-  @InjectRepository(Place) private readonly placeRepo: MongoRepository<Place>,
-  @InjectRepository(PlaceEditRequest) private readonly editRequestRepo: MongoRepository<PlaceEditRequest>,
-  @InjectRepository(Journey) private readonly journeyRepo: MongoRepository<Journey>, // Đảm bảo tên này
-  private readonly userProfileService: UserProfileService, 
-) {}
+  constructor(
+    @InjectRepository(Place) private readonly placeRepo: MongoRepository<Place>,
+    @InjectRepository(PlaceEditRequest) private readonly editRequestRepo: MongoRepository<PlaceEditRequest>,
+    @InjectRepository(Journey) private readonly journeyRepo: MongoRepository<Journey>,
+    private readonly userProfileService: UserProfileService, 
+  ) {}
 
+  // ==========================================
+  // 1. CREATE LOGIC
+  // ==========================================
   async create(dto: CreatePlaceDto, user: CurrentUser) {
     const { location, ...rest } = dto;
     
@@ -45,9 +48,13 @@ constructor(
     return await this.placeRepo.save(place);
   }
 
+  // ==========================================
+  // 2. READ LOGIC (SEARCH ENGINE UPDATE)
+  // ==========================================
   async findAll(query: SearchPlaceDto, userId?: string) {
     const { name, category, page = 1, limit = 10, lat, lng, radius, sortBy, sortOrder } = query;
 
+    // Tracking User Search Intent (để tính Travel DNA)
     if (userId && name) {
         this.userProfileService.trackUserSearch(userId, name);
     }
@@ -58,13 +65,14 @@ constructor(
     const order = sortOrder === SortOrder.DESC ? -1 : 1;
     const pipeline: any[] = [];
 
+    // 1. GeoNear (Luôn phải đứng đầu pipeline nếu có)
     if (lat !== undefined && lng !== undefined) {
       pipeline.push({
         $geoNear: {
           near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
           distanceField: 'distance',
           maxDistance: Number(radius) || 10000,
-          query: { status: PlaceStatus.APPROVED }, // Chỉ lấy đã duyệt
+          query: { status: PlaceStatus.APPROVED }, 
           spherical: true,
         },
       });
@@ -75,15 +83,35 @@ constructor(
       }
     }
 
-    if (name) pipeline.push({ $match: { name: { $regex: name, $options: 'i' } } });
-    if (category) pipeline.push({ $match: { category } });
+    // 2. Filter Logic (Updated for Tags)
+    if (name) {
+        const keywordRegex = new RegExp(name, 'i'); // Case-insensitive
+        
+        pipeline.push({ 
+            $match: { 
+                $or: [
+                    // Tìm trong tên địa điểm
+                    { name: { $regex: keywordRegex } },
+                    // [NEW] Tìm trong mảng Tags
+                    // Nếu user nhập "Chill", hệ thống sẽ trả về các quán có tag "Chill"
+                    { tags: { $in: [keywordRegex] } } 
+                ]
+            } 
+        });
+    }
 
+    if (category) {
+      pipeline.push({ $match: { category } });
+    }
+
+    // 3. Sorting
     if (sortField === SortBy.DISTANCE && lat !== undefined) {
       if (sortOrder === SortOrder.DESC) pipeline.push({ $sort: { distance: -1 } });
     } else {
       pipeline.push({ $sort: { [sortField]: order } });
     }
 
+    // 4. Pagination (Facet)
     pipeline.push({
       $facet: {
         data: [{ $skip: skip }, { $limit: take }],
@@ -111,6 +139,9 @@ constructor(
     return place;
   }
 
+  // ==========================================
+  // 3. UPDATE LOGIC
+  // ==========================================
   async update(id: string, dto: any, user: CurrentUser) {
     const place = await this.findOne(id);
     
@@ -143,12 +174,10 @@ constructor(
   }
 
   // ==========================================
-  // 4. ADMIN APPROVAL LOGIC (FULL)
+  // 4. ADMIN APPROVAL LOGIC
   // ==========================================
 
   // [NEW] A. DUYỆT ĐỊA ĐIỂM MỚI TẠO (PENDING PLACES)
-  
-  // 1. Lấy danh sách địa điểm mới đang chờ duyệt
   async getPendingPlaces() {
       return await this.placeRepo.find({
           where: { status: PlaceStatus.PENDING },
@@ -156,7 +185,6 @@ constructor(
       });
   }
 
-  // 2. Duyệt hoặc Từ chối địa điểm mới
   async verifyPlace(placeId: string, status: PlaceStatus.APPROVED | PlaceStatus.REJECTED, adminUser: CurrentUser) {
       if (adminUser.role !== Role.ADMIN) throw new ForbiddenException('Chỉ Admin mới được duyệt');
       
@@ -164,8 +192,6 @@ constructor(
       if (!place) throw new NotFoundException('Địa điểm không tồn tại');
 
       if (status === PlaceStatus.REJECTED) {
-          // Nếu từ chối thì xóa luôn hoặc set Rejected tùy chính sách
-          // Ở đây mình chọn set status REJECTED để lưu lịch sử
           place.status = PlaceStatus.REJECTED;
       } else {
           place.status = PlaceStatus.APPROVED;
@@ -175,8 +201,6 @@ constructor(
   }
 
   // [NEW] B. DUYỆT YÊU CẦU CHỈNH SỬA (EDIT REQUESTS)
-
-  // 1. Lấy danh sách yêu cầu chỉnh sửa đang Pending
   async getPendingEditRequests() {
       return await this.editRequestRepo.find({ 
           where: { status: EditRequestStatus.PENDING },
@@ -184,7 +208,6 @@ constructor(
       });
   }
 
-  // 2. Admin duyệt yêu cầu chỉnh sửa
   async approveEditRequest(requestId: string, adminUser: CurrentUser) {
       if (adminUser.role !== Role.ADMIN) throw new ForbiddenException('Chỉ Admin mới được duyệt');
 
@@ -192,7 +215,6 @@ constructor(
       if (!request) throw new NotFoundException('Yêu cầu không tồn tại');
       if (request.status !== EditRequestStatus.PENDING) throw new BadRequestException('Yêu cầu này đã được xử lý');
 
-      // Merge Data vào Place gốc
       const dto = request.update_data;
       const updateData = { ...dto };
       
@@ -202,14 +224,12 @@ constructor(
 
       await this.placeRepo.update(new ObjectId(request.place_id), updateData);
 
-      // Cập nhật Status Request
       request.status = EditRequestStatus.APPROVED;
       await this.editRequestRepo.save(request);
 
       return { success: true, message: 'Đã cập nhật địa điểm theo đề xuất' };
   }
 
-  // 3. Admin từ chối yêu cầu chỉnh sửa
   async rejectEditRequest(requestId: string, reason: string, adminUser: CurrentUser) {
       if (adminUser.role !== Role.ADMIN) throw new ForbiddenException('Chỉ Admin mới được duyệt');
 
@@ -223,10 +243,10 @@ constructor(
       return { success: true, message: 'Đã từ chối đề xuất' };
   }
 
-async remove(id: string, user: CurrentUser) {
+  async remove(id: string, user: CurrentUser) {
     const place = await this.findOne(id);
 
-    // 1. Validate Quyền (Admin hoặc Chủ sở hữu)
+    // 1. Validate Quyền
     const isAdmin = user.role === Role.ADMIN;
     const isOwner = place.ownerId === user.sub;
     
@@ -234,8 +254,7 @@ async remove(id: string, user: CurrentUser) {
       throw new ForbiddenException('Bạn không có quyền xóa địa điểm này');
     }
 
-    // 2. [IMPORTANT] Validate Integrity
-    // Kiểm tra xem địa điểm có đang được sử dụng trong hành trình nào không
+    // 2. Validate Integrity (Check Journey)
     const isUsedInJourney = await this.journeyRepo.findOne({
       where: { 'days.stops.place_id': id } as any
     });
@@ -246,17 +265,9 @@ async remove(id: string, user: CurrentUser) {
       );
     }
 
-    // 3. Tiến hành xóa
-    const session = this.placeRepo.manager.connection.createQueryRunner();
-    // (Nếu dùng MongoDB Atlas có hỗ trợ Transaction thì nên dùng ở đây)
-    
     try {
-      // Xóa địa điểm
       await this.placeRepo.delete(new ObjectId(id));
-
-      // Xóa các yêu cầu chỉnh sửa liên quan (Dọn rác)
-      await this.editRequestRepo.deleteMany({ place_id: id });
-
+      await this.editRequestRepo.deleteMany({ place_id: id }); // Dọn rác
       return { success: true, message: 'Đã xóa địa điểm và các dữ liệu liên quan' };
     } catch (error) {
       throw new BadRequestException('Có lỗi xảy ra khi xóa địa điểm');
