@@ -5,9 +5,13 @@ import { ReviewsController } from './reviews.controller';
 import { Review } from './entities/review.entity';
 import { Place } from '../places/entities/place.entity'; // Đảm bảo đúng đường dẫn
 import { Booking } from '../bookings/entities/booking.entity'; // Đảm bảo đúng đường dẫn
-
+import { InjectRepository } from '@nestjs/typeorm';
+import { MongoRepository } from 'typeorm';
+import { ObjectId } from 'mongodb';
+import { UsersModule } from '../users/users.module';
 @Module({
   imports: [
+    UsersModule,
     // Đăng ký các Entity để Repository có thể được Inject vào Service
     TypeOrmModule.forFeature([
       Review, 

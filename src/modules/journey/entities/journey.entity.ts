@@ -127,6 +127,9 @@ export class Journey {
   @Column({ default: 0 })
   total_stops_count: number;
 
+  @Column({ default: 0 })
+  favorites_count: number;
+  
   @CreateDateColumn() 
   created_at: Date;
 

@@ -48,6 +48,27 @@ export class Place {
   @Column({ type: 'enum', enum: PlaceStatus, default: PlaceStatus.PENDING })
   status: PlaceStatus;
 
+  @Column('json', { nullable: true })
+  openingHours: {
+    periods: {
+      open: { day: number; time: string }; // 0 (CN) -> 6 (T7), "0800"
+      close: { day: number; time: string };
+    }[];
+    weekday_text: string[]; // "Thứ Hai: 08:00 – 22:00"
+  };
+
+  @Column({ nullable: true })
+  phoneNumber: string;
+
+  @Column({ nullable: true })
+  website: string;
+
+  @Column({ default: 0 })
+  favorites_count: number;
+
+  @Column('simple-array', { nullable: true })
+  amenities: string[];
+
   @Column()
   createdBy: string;
 

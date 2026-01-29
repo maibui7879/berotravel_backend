@@ -1,12 +1,14 @@
-import { Controller, Get, Patch, Body, Delete, Param } from '@nestjs/common';
-import { UsersService } from './users.service';
+import { Controller, Get, Patch, Body, Delete, Param, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+
+import { UsersService } from './services/users.service';
+import { UserProfileService } from './services/user-profile.service'; // [NEW] Import Service thống kê
+
 import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/role.guard';
-import { UseGuards } from '@nestjs/common';
 import { AtGuard } from 'src/common/guards/at.guard';
 import { Role } from 'src/common/constants';
 
@@ -14,12 +16,22 @@ import { Role } from 'src/common/constants';
 @ApiBearerAuth() 
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly userProfileService: UserProfileService, // [NEW] Inject Service
+  ) {}
 
   @Get('profile')
   @ApiOperation({ summary: 'Lấy thông tin hồ sơ của chính mình' })
   getMe(@GetCurrentUser('sub') userId: string) {
     return this.usersService.findById(userId);
+  }
+
+  // [NEW] Endpoint lấy thống kê (Travel DNA)
+  @Get('profile/stats')
+  @ApiOperation({ summary: 'Lấy thống kê sở thích cá nhân (Travel DNA)' })
+  getMyStats(@GetCurrentUser('sub') userId: string) {
+    return this.userProfileService.getInterestVector(userId);
   }
 
   @Patch('profile')
@@ -31,7 +43,7 @@ export class UsersController {
     return this.usersService.update(userId, updateUserDto);
   }
 
-  // Endpoint dành cho Admin (Có thể thêm RolesGuard sau)
+  // Admin Endpoints
   @Get()
   @ApiOperation({ summary: 'Admin: Danh sách tất cả người dùng' })
   findAll() {

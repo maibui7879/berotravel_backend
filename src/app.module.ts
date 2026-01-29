@@ -13,6 +13,8 @@ import { ChatModule } from './modules/chat/chat.module';
 import { JourneysModule } from './modules/journey/journey.module';
 import { GroupsModule } from './modules/group/group.module';
 import { NotificationsModule } from './modules/notification/notification.module';
+import { FavoritesModule } from './modules/favorites/favorites.module';
+import { FriendModule } from './modules/friend/friend.module';
 
 @Module({
   imports: [
@@ -46,6 +48,8 @@ import { NotificationsModule } from './modules/notification/notification.module'
     JourneysModule,
     GroupsModule,
     NotificationsModule,
+    FavoritesModule,
+    FriendModule,
   ],
 })
 export class AppModule {}

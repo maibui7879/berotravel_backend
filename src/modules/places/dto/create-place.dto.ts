@@ -39,4 +39,23 @@ export class CreatePlaceDto {
   @IsOptional() 
   @IsArray() 
   tags?: string[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  phoneNumber?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  website?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsArray()
+  amenities?: string[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  openingHours?: any;
 }

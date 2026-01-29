@@ -2,14 +2,21 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
+
 import { Review, ReviewStatus } from './entities/review.entity';
 import { Place } from '../places/entities/place.entity';
+// [NEW] Import Service và Constants
+import { UserProfileService } from '../users/services/user-profile.service';
+import { UserActionType } from 'src/common/constants';
 
 @Injectable()
 export class ReviewsService {
   constructor(
     @InjectRepository(Review) private readonly reviewRepo: MongoRepository<Review>,
     @InjectRepository(Place) private readonly placeRepo: MongoRepository<Place>,
+    
+    // [NEW] Inject UserProfileService
+    private readonly userProfileService: UserProfileService,
   ) {}
 
   async create(dto: any, userId: string) {
@@ -22,6 +29,7 @@ export class ReviewsService {
     if (!place) throw new NotFoundException('Địa điểm không tồn tại');
 
     const avgRating = (cleanliness + service + location + price) / 4;
+    const finalRating = Number(avgRating.toFixed(1));
 
     const review = this.reviewRepo.create({
       place_id,
@@ -29,13 +37,20 @@ export class ReviewsService {
       content,
       images: images || [],
       criteria: { cleanliness, service, location, price },
-      rating: Number(avgRating.toFixed(1)),
+      rating: finalRating,
       helpful_count: 0,
       status: ReviewStatus.PUBLISHED,
     } as any);
 
     const saved = await this.reviewRepo.save(review);
     await this.syncPlaceStats(place_id);
+
+    // [TRAVEL DNA LOGIC]
+    // Nếu đánh giá tốt (>= 4 sao) -> Cộng điểm sở thích mạnh mẽ
+    if (finalRating >= 4) {
+        this.userProfileService.scoreAction(userId, place_id, UserActionType.RATING_HIGH);
+    }
+
     return saved;
   }
 
@@ -51,12 +66,10 @@ export class ReviewsService {
     const skip = (Number(page) - 1) * Number(limit);
     const take = Number(limit);
 
-    // Xây dựng điều kiện Filter
     const where: any = { place_id: placeId, status: ReviewStatus.PUBLISHED };
     if (filter === 'POSITIVE') where.rating = { $gte: 4 };
     if (filter === 'NEGATIVE') where.rating = { $lte: 2 };
 
-    // Xây dựng điều kiện Sort
     const order = { [sort_by]: sort_order === 'DESC' ? -1 : 1 };
 
     const [data, total] = await this.reviewRepo.findAndCount({

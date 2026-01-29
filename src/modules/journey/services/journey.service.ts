@@ -10,11 +10,12 @@ import { UpdateJourneyDto } from '../dto/update-journey.dto';
 import { AddStopDto } from '../dto/add-stop.dto';
 import { MoveStopDto } from '../dto/move-stop.dto';
 import { CreateJoinRequestDto, ReplyJoinRequestDto, ReplyStatus } from '../dto/social-journey.dto';
-import { Role } from 'src/common/constants';
+import { Role, UserActionType } from 'src/common/constants';
 
 import { GroupsService } from '../../group/group.service';
 import { NotificationsService } from '../../notification/notification.service';
-import { UsersService } from '../../users/users.service';
+import { UsersService } from 'src/modules/users/services/users.service';
+import { UserProfileService } from 'src/modules/users/services/user-profile.service'; 
 import { JourneyAccessService } from './journey-access.service';
 import { JourneySchedulerService } from './journey-scheduler.service';
 import { JourneyBudgetService } from './journey-budget.service';
@@ -43,12 +44,10 @@ export class JourneysService {
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
     private readonly bookingsService: BookingsService,
+    private readonly userProfileService: UserProfileService,
   ) {}
 
-  // =================================================================
-  // CORE CRUD
-  // =================================================================
-
+  // Core CRUD
   async create(dto: CreateJourneyDto, userId: string): Promise<Journey> {
     const start = new Date(dto.start_date);
     const end = new Date(dto.end_date);
@@ -147,7 +146,7 @@ export class JourneysService {
     return { success: true };
   }
   
-  // SOCIAL: PUBLIC JOIN REQUESTS (VIA GROUP)
+  // Social: Public Join Requests
   async sendJoinRequest(journeyId: string, userId: string, dto: CreateJoinRequestDto) {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
@@ -206,7 +205,7 @@ export class JourneysService {
     return { success: true, status: dto.status };
   }
 
-  // COMPLEX LOGIC (STOPS)
+  // Complex Logic (Stops)
   async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     
@@ -249,6 +248,9 @@ export class JourneysService {
     await this.schedulerService.recalculateEntireJourney(journey);
     await this.budgetService.syncSmartBudget(journey);
     await this.journeyRepo.save(journey);
+    
+    this.userProfileService.scoreAction(userId, dto.place_id, UserActionType.ADD_TO_PLAN);
+
     this.notifyMembers(journey, userId, 'đã thêm địa điểm mới', dto.day_index + 1);
     return journey;
   }
@@ -272,7 +274,7 @@ export class JourneysService {
     return journey;
   }
 
-  async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: string) {
+async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: string) {
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     const day = journey.days.find(d => d.day_number === dayNumber);
     
@@ -289,6 +291,10 @@ export class JourneysService {
                 );
            }
            
+           // [NEW] Trừ điểm sở thích (Revert Personalization Score)
+           // Không cần await để tối ưu performance
+           this.userProfileService.scoreAction(userId, stop.place_id, UserActionType.REMOVE_FROM_PLAN);
+
            day.stops = day.stops.filter(s => s._id !== stopId);
            
            await this.schedulerService.recalculateEntireJourney(journey);
