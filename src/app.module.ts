@@ -6,7 +6,6 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PlacesModule } from './modules/places/places.module';
-import { InventoryModule } from './modules/inventory/inventory.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { ChatModule } from './modules/chat/chat.module';
@@ -40,7 +39,6 @@ import { FriendModule } from './modules/friend/friend.module';
     UsersModule,
     AuthModule,
     PlacesModule,
-    InventoryModule,
     BookingsModule,
     ReviewsModule,
     ChatModule,
