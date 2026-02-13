@@ -49,38 +49,46 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // 2. JOIN ROOM
+  // [UPDATED] Changed from group_id to journey_id
   @SubscribeMessage('join_room')
-  handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { group_id: string }) {
+  handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { journey_id: string }) {
     if (client.data.user) {
-      client.join(data.group_id);
+      const roomId = `journey_${data.journey_id}`;
+      client.join(roomId);
+      console.log(`User ${client.data.user.sub} joined journey ${data.journey_id}`);
     }
   }
 
   // 3. SEND MESSAGE
+  // [UPDATED] Changed from group_id to journey_id
   @SubscribeMessage('send_message')
   async handleSendMessage(@ConnectedSocket() client: Socket, @MessageBody() dto: SendMessageDto) {
     try {
       const userId = client.data.user.sub;
       const savedMsg = await this.chatService.saveMessage(userId, dto);
-      this.server.to(dto.group_id).emit('receive_message', savedMsg);
+      const roomId = `journey_${dto.journey_id}`;
+      this.server.to(roomId).emit('receive_message', savedMsg);
     } catch (error) {
       client.emit('error', { message: error.message });
     }
   }
   
   // 4. VOTE POLL
+  // [UPDATED] Changed from group_id to journey_id
   @SubscribeMessage('vote_poll')
   async handleVotePoll(@ConnectedSocket() client: Socket, @MessageBody() dto: VotePollDto) {
     try {
       const userId = client.data.user.sub;
       const updatedMsg = await this.chatService.votePoll(dto.message_id, dto.option_id, userId);
-      this.server.to(dto.group_id).emit('poll_updated', updatedMsg);
+      const roomId = `journey_${dto.journey_id}`;
+      this.server.to(roomId).emit('poll_updated', updatedMsg);
     } catch (error) {
       client.emit('error', { message: error.message });
     }
   }
 
   // 5. REACT MESSAGE
+  // [UPDATED] Changed from group_id to journey_id
   @SubscribeMessage('react_message')
   async handleReactMessage(@ConnectedSocket() client: Socket, @MessageBody() dto: ReactMessageDto) {
     try {
@@ -89,8 +97,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Gọi service xử lý
       const result = await this.chatService.reactMessage(dto.message_id, userId, dto.emoji);
       
-      // Bắn sự kiện cho cả phòng biết để update UI
-      this.server.to(dto.group_id).emit('reaction_updated', result);
+      // [UPDATED] Use journey_id instead of group_id
+      const roomId = `journey_${dto.journey_id}`;
+      this.server.to(roomId).emit('reaction_updated', result);
       
     } catch (error) {
       console.error(error);

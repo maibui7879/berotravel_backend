@@ -16,35 +16,35 @@ export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   // 1. LẤY LỊCH SỬ
-  @Get('history/:groupId')
+  @Get('history/:journeyId')
   @ApiOperation({ summary: 'Lấy lịch sử tin nhắn' })
-  async getHistory(@Param('groupId') groupId: string, @GetCurrentUser('sub') userId: string) {
-    return this.chatService.getMessages(groupId, userId);
+  async getHistory(@Param('journeyId') journeyId: string, @GetCurrentUser('sub') userId: string) {
+    return this.chatService.getMessages(journeyId, userId);
   }
 
   // 2. KHO ẢNH
-  @Get(':groupId/images')
-  @ApiOperation({ summary: 'Lấy kho ảnh của nhóm' })
-  async getImages(@Param('groupId') groupId: string, @GetCurrentUser('sub') userId: string) {
-    return this.chatService.getGroupImages(groupId, userId);
+  @Get(':journeyId/images')
+  @ApiOperation({ summary: 'Lấy kho ảnh của chuyến đi' })
+  async getImages(@Param('journeyId') journeyId: string, @GetCurrentUser('sub') userId: string) {
+    return this.chatService.getJourneyImages(journeyId, userId);
   }
 
   // 3. DANH SÁCH POLLS
-  @Get(':groupId/polls')
+  @Get(':journeyId/polls')
   @ApiOperation({ summary: 'Lấy danh sách bình chọn' })
-  async getPolls(@Param('groupId') groupId: string, @GetCurrentUser('sub') userId: string) {
-    return this.chatService.getGroupPolls(groupId, userId);
+  async getPolls(@Param('journeyId') journeyId: string, @GetCurrentUser('sub') userId: string) {
+    return this.chatService.getJourneyPolls(journeyId, userId);
   }
 
   // 4. TÌM KIẾM
-  @Get(':groupId/search')
+  @Get(':journeyId/search')
   @ApiOperation({ summary: 'Tìm kiếm tin nhắn' })
   async search(
-    @Param('groupId') groupId: string,
+    @Param('journeyId') journeyId: string,
     @Query() query: SearchChatDto,
     @GetCurrentUser('sub') userId: string
   ) {
-    return this.chatService.searchMessages(groupId, userId, query);
+    return this.chatService.searchMessages(journeyId, userId, query);
   }
 
   // 5. ADMIN XÓA TIN NHẮN

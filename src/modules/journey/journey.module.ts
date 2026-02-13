@@ -20,7 +20,6 @@ import { InventoryUnit } from '../bookings/entities/inventory-unit.entity';
 import { Availability } from '../bookings/entities/availability.entity';
 
 // External Modules
-import { GroupsModule } from '../group/group.module';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notification/notification.module'; 
 import { BookingsModule } from '../bookings/bookings.module';
@@ -29,7 +28,6 @@ import { JourneyTrackingService } from './services/journey-tracking.service';
   imports: [
     TypeOrmModule.forFeature([Journey, Place, InventoryUnit, Availability]),
     
-    forwardRef(() => GroupsModule),
     UsersModule,
     NotificationsModule,
     BookingsModule 

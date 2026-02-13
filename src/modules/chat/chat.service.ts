@@ -4,8 +4,7 @@ import { MongoRepository } from 'typeorm';
 import { ChatMessage, MessageType } from './entities/chat-message.entity';
 import { ObjectId } from 'mongodb';
 import { SendMessageDto, SearchChatDto } from './dto/chat.dto';
-import { GroupsService } from '../group/group.service';
-// [FIX 1] Import User Entity
+import { JourneysService } from '../journey/services/journey.service';
 import { User } from '../users/entities/user.entity'; 
 
 @Injectable()
@@ -14,30 +13,26 @@ export class ChatService {
     @InjectRepository(ChatMessage)
     private readonly chatRepo: MongoRepository<ChatMessage>,
     
-    // [FIX 2] Inject User Repository để lấy thông tin người gửi
     @InjectRepository(User)
     private readonly userRepo: MongoRepository<User>,
 
-    private readonly groupsService: GroupsService,
+    private readonly journeysService: JourneysService,
   ) {}
 
-  // 1. LƯU TIN NHẮN (ĐÃ FIX: LƯU KÈM TÊN VÀ AVATAR)
+  // [UPDATED] Save message with journey_id instead of group_id
   async saveMessage(userId: string, dto: SendMessageDto) {
-    // Check user có trong nhóm không
-    await this.groupsService.findOne(dto.group_id, userId); 
+    // Check user có trong journey không
+    const journey = await this.journeysService.findOne(dto.journey_id);
+    const isMember = journey.members.some(m => m.user_id === userId);
+    if (!isMember) throw new BadRequestException('Bạn không phải thành viên của hành trình này');
 
-    // [FIX 3] Lấy thông tin User
     const sender = await this.userRepo.findOne({ where: { _id: new ObjectId(userId) } });
 
     const message = this.chatRepo.create({
-      group_id: dto.group_id,
+      journey_id: dto.journey_id,
       sender_id: userId,
-      
-      // Map thông tin User vào tin nhắn (Denormalization)
       sender_name: sender?.fullName || 'Unknown',
-      sender_avatar: sender?.avatar || undefined, // Giả sử User có field avatar
-      // Giả sử User có field avatar
-
+      sender_avatar: sender?.avatar || undefined,
       content: dto.content || '',
       type: dto.type,
       metadata: dto.metadata,
@@ -103,40 +98,51 @@ export class ChatService {
     };
   }
 
-  // 4. LẤY LỊCH SỬ TIN NHẮN
-  async getMessages(groupId: string, userId: string, limit = 50) {
-    await this.groupsService.findOne(groupId, userId);
+  // [UPDATED] Get messages with journey_id
+  async getMessages(journeyId: string, userId: string, limit = 50) {
+    const journey = await this.journeysService.findOne(journeyId);
+    const isMember = journey.members.some(m => m.user_id === userId);
+    if (!isMember) throw new BadRequestException('Bạn không phải thành viên của hành trình này');
+
     const messages = await this.chatRepo.find({
-      where: { group_id: groupId },
+      where: { journey_id: journeyId },
       order: { created_at: 'DESC' },
       take: limit,
     } as any);
     return messages.reverse();
   }
 
-  // 5. LẤY KHO ẢNH (GALLERY)
-  async getGroupImages(groupId: string, userId: string) {
-    await this.groupsService.findOne(groupId, userId);
+  // [UPDATED] Get journey images
+  async getJourneyImages(journeyId: string, userId: string) {
+    const journey = await this.journeysService.findOne(journeyId);
+    const isMember = journey.members.some(m => m.user_id === userId);
+    if (!isMember) throw new BadRequestException('Bạn không phải thành viên của hành trình này');
+
     return await this.chatRepo.find({
-      where: { group_id: groupId, type: MessageType.IMAGE },
+      where: { journey_id: journeyId, type: MessageType.IMAGE },
       order: { created_at: 'DESC' }
     } as any);
   }
 
-  // 6. LẤY DANH SÁCH POLLS
-  async getGroupPolls(groupId: string, userId: string) {
-    await this.groupsService.findOne(groupId, userId);
+  // [UPDATED] Get journey polls
+  async getJourneyPolls(journeyId: string, userId: string) {
+    const journey = await this.journeysService.findOne(journeyId);
+    const isMember = journey.members.some(m => m.user_id === userId);
+    if (!isMember) throw new BadRequestException('Bạn không phải thành viên của hành trình này');
+
     return await this.chatRepo.find({
-      where: { group_id: groupId, type: MessageType.POLL },
+      where: { journey_id: journeyId, type: MessageType.POLL },
       order: { created_at: 'DESC' }
     } as any);
   }
 
-  // 7. TÌM KIẾM TIN NHẮN
-  async searchMessages(groupId: string, userId: string, queryDto: SearchChatDto) {
-    await this.groupsService.findOne(groupId, userId);
+  // [UPDATED] Search messages in journey
+  async searchMessages(journeyId: string, userId: string, queryDto: SearchChatDto) {
+    const journey = await this.journeysService.findOne(journeyId);
+    const isMember = journey.members.some(m => m.user_id === userId);
+    if (!isMember) throw new BadRequestException('Bạn không phải thành viên của hành trình này');
 
-    const query: any = { group_id: groupId };
+    const query: any = { journey_id: journeyId };
     if (queryDto.keyword) query.content = { $regex: queryDto.keyword, $options: 'i' };
     if (queryDto.sender_id) query.sender_id = queryDto.sender_id;
 

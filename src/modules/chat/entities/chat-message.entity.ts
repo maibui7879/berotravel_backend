@@ -22,8 +22,13 @@ export class ChatMessage {
   @ObjectIdColumn()
   _id: ObjectId;
 
+  // [UPDATED] Renamed from group_id to journey_id (merged structure)
   @Column()
-  group_id: string;
+  journey_id: string;
+
+  // [DEPRECATED] Keeping for backward compatibility temporarily
+  @Column({ nullable: true })
+  group_id?: string;
 
   @Column()
   sender_id: string;

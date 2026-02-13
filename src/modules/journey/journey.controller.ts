@@ -15,7 +15,8 @@ import { CreateJourneyDto } from './dto/create-journey.dto';
 import { UpdateJourneyDto } from './dto/update-journey.dto';
 import { AddStopDto } from './dto/add-stop.dto';
 import { CheckInStopDto, ResumeJourneyDto } from './dto/tracking.dto';
-import { CreateJoinRequestDto, ReplyJoinRequestDto } from './dto/social-journey.dto'; // [NEW] Import DTO
+import { CreateJoinRequestDto, ReplyJoinRequestDto } from './dto/social-journey.dto';
+import { JoinJourneyDto, ManageMemberDto } from './dto/member-management.dto';
 
 interface CurrentUser {
   sub: string;
@@ -185,5 +186,82 @@ export class JourneysController {
     @GetCurrentUser('sub') userId: string
   ) {
     return this.journeysService.replyJoinRequest(journeyId, requestUserId, userId, dto);
+  }
+
+  // =================================================================
+  // MEMBER MANAGEMENT (Merged from Groups)
+  // =================================================================
+
+  @Post('join')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Tham gia hành trình bằng mã mời' })
+  joinJourney(@Body() dto: JoinJourneyDto, @GetCurrentUser('sub') userId: string) {
+    return this.journeysService.joinJourney(dto.invite_code, userId);
+  }
+
+  @Post(':id/request-join')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Gửi yêu cầu tham gia hành trình (Chờ duyệt)' })
+  @ApiParam({ name: 'id', description: 'Journey ID' })
+  requestJoinJourney(@Param('id') journeyId: string, @GetCurrentUser('sub') userId: string) {
+    return this.journeysService.requestJoinJourney(journeyId, userId);
+  }
+
+  @Get(':id/members/pending-requests')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xem danh sách yêu cầu tham gia chờ duyệt' })
+  @ApiParam({ name: 'id', description: 'Journey ID' })
+  getPendingJoinRequests(
+    @Param('id') journeyId: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.getPendingJoinRequests(journeyId, userId);
+  }
+
+  @Patch(':id/members/:memberId/approve')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Duyệt yêu cầu tham gia' })
+  @ApiParam({ name: 'id', description: 'Journey ID' })
+  @ApiParam({ name: 'memberId', description: 'ID của user xin tham gia' })
+  approveMember(
+    @Param('id') journeyId: string,
+    @Param('memberId') memberId: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.approveMember(journeyId, memberId, userId);
+  }
+
+  @Patch(':id/members/:memberId/reject')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Từ chối yêu cầu tham gia' })
+  @ApiParam({ name: 'id', description: 'Journey ID' })
+  @ApiParam({ name: 'memberId', description: 'ID của user xin tham gia' })
+  rejectMember(
+    @Param('id') journeyId: string,
+    @Param('memberId') memberId: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.rejectMember(journeyId, memberId, userId);
+  }
+
+  @Delete(':id/members/:memberId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Đuổi thành viên khỏi hành trình' })
+  @ApiParam({ name: 'id', description: 'Journey ID' })
+  @ApiParam({ name: 'memberId', description: 'ID của thành viên cần đuổi' })
+  removeMember(
+    @Param('id') journeyId: string,
+    @Param('memberId') memberId: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.removeMember(journeyId, memberId, userId);
+  }
+
+  @Post(':id/leave')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Rời khỏi hành trình' })
+  @ApiParam({ name: 'id', description: 'Journey ID' })
+  leaveJourney(@Param('id') journeyId: string, @GetCurrentUser('sub') userId: string) {
+    return this.journeysService.leaveJourney(journeyId, userId);
   }
 }

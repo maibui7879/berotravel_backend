@@ -18,7 +18,7 @@ export class JourneyAccessService {
 
     // 1. Check Owner/Member
     const isOwner = journey.owner_id === userId;
-    const isMember = journey.members.includes(userId);
+    const isMember = journey.members.some(m => m.user_id === userId);
 
     // 2. Logic quyền truy cập
     if (mode === 'EDIT') {

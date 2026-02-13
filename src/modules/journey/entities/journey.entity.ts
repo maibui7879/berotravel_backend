@@ -1,11 +1,32 @@
-import { Entity, ObjectIdColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, ObjectIdColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 import { ObjectId } from 'mongodb';
+import { ApiProperty } from '@nestjs/swagger';
 
 export interface TransitInfo {
   mode: 'DRIVING' | 'WALKING' | 'PUBLIC_TRANSPORT' | 'FLIGHT' | 'BOAT';
   distance_km: number;
   duration_minutes: number;
   from_place_id: string;
+}
+
+// [NEW] Member role enum (merged from Group)
+export enum JourneyMemberRole {
+  HOST = 'HOST',       // Trưởng nhóm/Chủ chuyến đi
+  MEMBER = 'MEMBER',   // Thành viên
+  VIEWER = 'VIEWER'    // Người xem
+}
+
+// [NEW] Member info class (merged from Group)
+export class JourneyMember {
+  @ApiProperty() user_id: string;
+  @ApiProperty({ enum: JourneyMemberRole }) role: JourneyMemberRole;
+  @ApiProperty() joined_at: Date;
+}
+
+// [NEW] Join request class (merged from Group)
+export class JourneyJoinRequest {
+  @ApiProperty() user_id: string;
+  @ApiProperty() requested_at: Date;
 }
 
 export enum CostType {
@@ -83,17 +104,27 @@ export class Journey {
   @Column() 
   owner_id: string;
 
-  @Column('array', { default: [] }) 
-  members: string[];
+  // [MERGED] Detailed member list with roles
+  @Column('json', { default: [] })
+  @ApiProperty({ type: [JourneyMember] })
+  members: JourneyMember[];
+
+  // [MERGED] Invite code from Group
+  @Column({ nullable: true })
+  @Index('IDX_JOURNEY_INVITE_CODE', { unique: true, sparse: true })
+  @ApiProperty()
+  invite_code?: string;
+
+  // [MERGED] Join requests from Group
+  @Column('json', { default: [] })
+  @ApiProperty({ type: [JourneyJoinRequest] })
+  join_requests: JourneyJoinRequest[] = [];
 
   @Column() 
   start_date: Date;
 
   @Column({ default: 1 }) 
   planned_members_count: number;
-
-  @Column({ nullable: true }) 
-  group_id: string;
 
   @Column() 
   end_date: Date;

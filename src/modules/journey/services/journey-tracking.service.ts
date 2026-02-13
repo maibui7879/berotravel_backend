@@ -132,7 +132,7 @@ export class JourneyTrackingService {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
     
-    if (journey.owner_id !== userId && !journey.members.includes(userId)) {
+    if (journey.owner_id !== userId && !journey.members.some(m => m.user_id === userId)) {
         throw new BadRequestException('Bạn không phải thành viên chuyến đi');
     }
 

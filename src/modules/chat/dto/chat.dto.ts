@@ -2,12 +2,12 @@ import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { MessageType } from '../entities/chat-message.entity';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-// 1. Gửi tin nhắn
+// [UPDATED] Gửi tin nhắn - journey_id thay vì group_id
 export class SendMessageDto {
-  @ApiProperty()
+  @ApiProperty({ description: 'Journey ID' })
   @IsNotEmpty()
   @IsString()
-  group_id: string;
+  journey_id: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -28,12 +28,12 @@ export class SendMessageDto {
   reply_to_id?: string;
 }
 
-// 2. Vote Poll
+// [UPDATED] Vote Poll - journey_id thay vì group_id
 export class VotePollDto {
-  @ApiProperty()
+  @ApiProperty({ description: 'Journey ID' })
   @IsNotEmpty()
   @IsString()
-  group_id: string;
+  journey_id: string;
 
   @ApiProperty()
   @IsNotEmpty()
@@ -46,11 +46,12 @@ export class VotePollDto {
   option_id: string;
 }
 
+// [UPDATED] React Message - journey_id thay vì group_id
 export class ReactMessageDto {
-  @ApiProperty()
+  @ApiProperty({ description: 'Journey ID' })
   @IsNotEmpty()
   @IsString()
-  group_id: string;
+  journey_id: string;
 
   @ApiProperty()
   @IsNotEmpty()
