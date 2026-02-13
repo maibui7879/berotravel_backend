@@ -11,7 +11,6 @@ import { BookingsModule } from './modules/bookings/bookings.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { JourneysModule } from './modules/journey/journey.module';
-import { GroupsModule } from './modules/group/group.module';
 import { NotificationsModule } from './modules/notification/notification.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { FriendModule } from './modules/friend/friend.module';
@@ -46,7 +45,6 @@ import { FriendModule } from './modules/friend/friend.module';
     ReviewsModule,
     ChatModule,
     JourneysModule,
-    GroupsModule,
     NotificationsModule,
     FavoritesModule,
     FriendModule,
