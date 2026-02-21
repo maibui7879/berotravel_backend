@@ -163,7 +163,7 @@ export class AdminDashboardService {
     });
 
     // Format response
-    const result = [];
+    const result: Array<{ date: string; revenue: number; bookings: number }> = [];
     for (let i = days - 1; i >= 0; i--) {
       const date = new Date(endDate);
       date.setDate(date.getDate() - i);
@@ -283,7 +283,7 @@ export class AdminDashboardService {
 
     // Format response with cumulative total
     let cumulativeTotal = 0;
-    const result = [];
+    const result: Array<{ date: string; newUsers: number; totalUsers: number }> = [];
 
     for (let i = days - 1; i >= 0; i--) {
       const date = new Date(endDate);

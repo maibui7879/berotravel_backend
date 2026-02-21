@@ -1,246 +1,120 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as redis from 'redis';
+import { createClient, RedisClientType } from 'redis';
 
-/**
- * Redis Cache Service
- * Provides caching for expensive queries and frequently accessed data
- */
 @Injectable()
-export class CacheService {
+export class CacheService implements OnModuleDestroy {
   private readonly logger = new Logger(CacheService.name);
-  private client: redis.RedisClient;
-  private readonly ttl: number; // Default TTL in seconds
+  private client: RedisClientType;
+  private readonly ttl: number;
 
   constructor(private configService: ConfigService) {
-    this.ttl = this.configService.get('CACHE_TTL', 3600); // Default 1 hour
+    this.ttl = this.configService.get<number>('CACHE_TTL', 3600);
 
-    // Initialize Redis client
     const redisHost = this.configService.get('REDIS_HOST', 'localhost');
     const redisPort = this.configService.get('REDIS_PORT', 6379);
     const redisPassword = this.configService.get('REDIS_PASSWORD');
 
-    const options: redis.ClientOpts = {
-      host: redisHost,
-      port: redisPort,
-      retry_strategy: (options) => {
-        if (options.error && options.error.code === 'ECONNREFUSED') {
-          this.logger.warn('Redis connection refused');
-          return new Error('End of retry');
-        }
-        if (options.total_retry_time > 1000 * 60 * 60) {
-          return new Error('Retry time exhausted');
-        }
-        if (options.attempt > 10) {
-          return undefined;
-        }
-        return Math.min(options.attempt * 100, 3000);
-      },
-    };
+    this.client = createClient({
+      socket: { host: redisHost, port: redisPort },
+      password: redisPassword,
+    }) as RedisClientType;
 
-    if (redisPassword) {
-      options.password = redisPassword;
-    }
+    this.client.on('error', (err) => this.logger.error('Redis error:', err));
+    this.client.on('connect', () => this.logger.log('Redis connected'));
 
-    this.client = redis.createClient(options);
-
-    this.client.on('error', (err: Error) => {
-      this.logger.error('Redis error:', err);
-    });
-
-    this.client.on('connect', () => {
-      this.logger.log('Redis connected');
-    });
+    // Khởi động kết nối
+    this.client.connect().catch(err => this.logger.error('Redis connect fail', err));
   }
 
-  /**
-   * Get value from cache
-   */
   async get<T>(key: string): Promise<T | null> {
     try {
-      const data = await new Promise<string | null>((resolve, reject) => {
-        this.client.get(key, (err, data) => {
-          if (err) reject(err);
-          else resolve(data);
-        });
-      });
-
-      if (!data) return null;
-
-      return JSON.parse(data) as T;
+      const data = await this.client.get(key);
+      return data ? JSON.parse(data) as T : null;
     } catch (error) {
       this.logger.warn(`Cache get error for key ${key}:`, error);
       return null;
     }
   }
 
-  /**
-   * Set value in cache with optional TTL
-   */
   async set<T>(key: string, value: T, ttl?: number): Promise<void> {
     try {
       const data = JSON.stringify(value);
       const timeout = ttl || this.ttl;
-
-      await new Promise<void>((resolve, reject) => {
-        if (timeout > 0) {
-          this.client.setex(key, timeout, data, (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        } else {
-          this.client.set(key, data, (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        }
-      });
+      if (timeout > 0) {
+        await this.client.setEx(key, timeout, data);
+      } else {
+        await this.client.set(key, data);
+      }
     } catch (error) {
       this.logger.warn(`Cache set error for key ${key}:`, error);
     }
   }
 
-  /**
-   * Delete cache key
-   */
   async del(key: string): Promise<void> {
     try {
-      await new Promise<void>((resolve, reject) => {
-        this.client.del(key, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await this.client.del(key);
     } catch (error) {
       this.logger.warn(`Cache delete error for key ${key}:`, error);
     }
   }
 
-  /**
-   * Delete all cache keys matching pattern
-   */
   async delPattern(pattern: string): Promise<number> {
     try {
-      return await new Promise<number>((resolve, reject) => {
-        this.client.keys(pattern, (err, keys) => {
-          if (err) {
-            reject(err);
-          } else if (keys.length === 0) {
-            resolve(0);
-          } else {
-            this.client.del(...keys, (err, count) => {
-              if (err) reject(err);
-              else resolve(count);
-            });
-          }
-        });
-      });
+      const keys = await this.client.keys(pattern);
+      if (keys.length > 0) {
+        return await this.client.del(keys);
+      }
+      return 0;
     } catch (error) {
-      this.logger.warn(`Cache delete pattern error for ${pattern}:`, error);
       return 0;
     }
   }
 
-  /**
-   * Check if key exists
-   */
   async exists(key: string): Promise<boolean> {
     try {
-      return await new Promise<boolean>((resolve, reject) => {
-        this.client.exists(key, (err, exists) => {
-          if (err) reject(err);
-          else resolve(exists === 1);
-        });
-      });
+      return (await this.client.exists(key)) > 0;
     } catch (error) {
-      this.logger.warn(`Cache exists error for key ${key}:`, error);
       return false;
     }
   }
 
-  /**
-   * Get and cache - pattern for getting or setting cache
-   */
-  async getOrCache<T>(
-    key: string,
-    fn: () => Promise<T>,
-    ttl?: number,
-  ): Promise<T> {
-    // Try to get from cache
+  async getOrCache<T>(key: string, fn: () => Promise<T>, ttl?: number): Promise<T> {
     const cached = await this.get<T>(key);
-    if (cached) {
-      this.logger.debug(`Cache hit for ${key}`);
-      return cached;
-    }
-
-    // Cache miss - call function
-    this.logger.debug(`Cache miss for ${key}`);
+    if (cached) return cached;
     const data = await fn();
-
-    // Store in cache
     await this.set(key, data, ttl);
-
     return data;
   }
 
-  /**
-   * Increment counter (for rate limiting, stats)
-   */
   async increment(key: string, ttl?: number): Promise<number> {
     try {
-      return await new Promise<number>((resolve, reject) => {
-        this.client.incr(key, (err, count) => {
-          if (err) {
-            reject(err);
-          } else {
-            // Set TTL if provided and count is 1 (first time)
-            if (ttl && count === 1) {
-              this.client.expire(key, ttl, (err) => {
-                if (err) reject(err);
-                else resolve(count);
-              });
-            } else {
-              resolve(count);
-            }
-          }
-        });
-      });
+      const count = await this.client.incr(key);
+      if (ttl && count === 1) {
+        await this.client.expire(key, ttl);
+      }
+      return count;
     } catch (error) {
-      this.logger.warn(`Cache increment error for key ${key}:`, error);
       return 0;
     }
   }
 
-  /**
-   * Flush all cache
-   */
   async flushAll(): Promise<void> {
     try {
-      await new Promise<void>((resolve, reject) => {
-        this.client.flushall((err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-      this.logger.log('Cache flushed');
+      await this.client.flushAll();
     } catch (error) {
       this.logger.error('Cache flush error:', error);
     }
   }
 
-  /**
-   * Close Redis connection
-   */
   async close(): Promise<void> {
-    return new Promise<void>((resolve) => {
-      if (this.client) {
-        this.client.quit(() => {
-          this.logger.log('Redis connection closed');
-          resolve();
-        });
-      } else {
-        resolve();
-      }
-    });
+    if (this.client) {
+      await this.client.quit();
+      this.logger.log('Redis connection closed');
+    }
+  }
+
+  async onModuleDestroy() {
+    await this.close();
   }
 }

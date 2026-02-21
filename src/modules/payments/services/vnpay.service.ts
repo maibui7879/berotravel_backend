@@ -17,10 +17,10 @@ export class VnpayService {
   private readonly queryUrl: string;
 
   constructor(private configService: ConfigService) {
-    this.merchantId = this.configService.get('VNPAY_MERCHANT_ID');
-    this.hashSecret = this.configService.get('VNPAY_HASH_SECRET');
-    this.apiUrl = this.configService.get('VNPAY_API_URL');
-    this.queryUrl = this.configService.get('VNPAY_QUERY_DR_URL');
+    this.merchantId = this.configService.get('VNPAY_MERCHANT_ID')|| '';
+    this.hashSecret = this.configService.get('VNPAY_HASH_SECRET')|| '';
+    this.apiUrl = this.configService.get('VNPAY_API_URL')|| '';
+    this.queryUrl = this.configService.get('VNPAY_QUERY_DR_URL')|| '';
 
     if (!this.merchantId || !this.hashSecret) {
       this.logger.warn('VNPay credentials not configured');

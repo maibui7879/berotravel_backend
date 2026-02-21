@@ -180,7 +180,7 @@ export class AutoItineraryGeneratorService {
           name: place.name,
           category: Array.isArray(place.category) ? place.category : [place.category],
           estimated_duration: 90,
-          estimated_cost: place.estimated_cost || 500,
+          estimated_cost: place.priceLevel || 0,
           suggested_time: this.calculateTimeSlot(dayNum, idx),
         }));
 

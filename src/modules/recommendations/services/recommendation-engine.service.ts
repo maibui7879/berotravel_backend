@@ -88,18 +88,18 @@ export class RecommendationEngineService {
           description: place.description,
           category: Array.isArray(place.category) ? place.category : [place.category],
           tags: place.tags || [],
-          image_url: place.image_url,
-          average_rating: place.average_rating || 0,
-          review_count: place.review_count || 0,
+          image_url: place.images && place.images.length > 0 ? place.images[0] : '',
+          average_rating: place.rating || 0,
+          review_count: place.reviewCount || 0,
           matching_score: matchingData.totalScore,
           matching_tags: matchingData.matchingTags,
-          estimated_cost: place.estimated_cost,
+          estimated_cost: place.priceLevel || 0,
           distance: options.latitude && options.longitude ? 
             this.calculateDistance(
               options.latitude,
               options.longitude,
-              place.latitude,
-              place.longitude,
+              place.location?.coordinates[1] || 0,
+              place.location?.coordinates[0] || 0,
             ) : undefined,
         };
       })
@@ -163,9 +163,9 @@ export class RecommendationEngineService {
 
     // 3. Popularity boost (tránh dead places)
     let popularityBoost = 0;
-    if (place.average_rating && place.review_count) {
-      const ratingNorm = (place.average_rating / 5) * 100; // 0-100
-      const reviewBoost = Math.min((place.review_count / 100) * 10, 10); // Cap at 10%
+    if (place.rating && place.reviewCount) {
+      const ratingNorm = (place.rating / 5) * 100; // 0-100
+      const reviewBoost = Math.min((place.reviewCount / 100) * 10, 10); // Cap at 10%
       popularityBoost = ratingNorm * (1 + reviewBoost / 100);
     }
 
@@ -205,12 +205,12 @@ export class RecommendationEngineService {
       description: place.description,
       category: Array.isArray(place.category) ? place.category : [place.category],
       tags: place.tags || [],
-      image_url: place.image_url,
-      average_rating: place.average_rating || 0,
-      review_count: place.review_count || 0,
-      matching_score: ((place.average_rating || 0) / 5) * 100,
+      image_url: place.images && place.images.length > 0 ? place.images[0] : '',
+      average_rating: place.rating || 0,
+      review_count: place.reviewCount || 0,
+      matching_score: ((place.rating || 0) / 5) * 100,
       matching_tags: [],
-      estimated_cost: place.estimated_cost,
+      estimated_cost: place.priceLevel || 0,
     }));
   }
 

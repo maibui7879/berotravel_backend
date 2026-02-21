@@ -364,7 +364,7 @@ export class PaymentService {
 
       payment.status = PaymentStatus.PROCESSING;
       payment.transaction_id = appTransId;
-      payment.payment_url = result.zalolink;
+      payment.payment_url = result.zalolink|| '';
       await this.paymentRepo.save(payment);
 
       this.logger.log(`ZaloPay payment initialized for payment ${payment._id}`);

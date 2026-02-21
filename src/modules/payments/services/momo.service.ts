@@ -17,11 +17,11 @@ export class MomoService {
   private readonly queryUrl: string;
 
   constructor(private configService: ConfigService) {
-    this.partnerCode = this.configService.get('MOMO_PARTNER_CODE');
-    this.accessKey = this.configService.get('MOMO_ACCESS_KEY');
-    this.secretKey = this.configService.get('MOMO_SECRET_KEY');
-    this.apiUrl = this.configService.get('MOMO_API_URL');
-    this.queryUrl = this.configService.get('MOMO_QUERY_URL');
+    this.partnerCode = this.configService.get('MOMO_PARTNER_CODE')|| '';
+    this.accessKey = this.configService.get('MOMO_ACCESS_KEY') || '';
+    this.secretKey = this.configService.get('MOMO_SECRET_KEY') || '';
+    this.apiUrl = this.configService.get('MOMO_API_URL')|| '';
+    this.queryUrl = this.configService.get('MOMO_QUERY_URL')|| '';
 
     if (!this.partnerCode || !this.secretKey) {
       this.logger.warn('MoMo credentials not configured');

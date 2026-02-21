@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as winston from 'winston';
-import * as DailyRotateFile from 'winston-daily-rotate-file';
+import DailyRotateFile from 'winston-daily-rotate-file';
 
 /**
  * Winston Logger Service

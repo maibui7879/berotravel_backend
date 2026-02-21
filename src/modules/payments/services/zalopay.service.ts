@@ -18,10 +18,10 @@ export class ZalopayService {
   private readonly queryUrl: string;
 
   constructor(private configService: ConfigService) {
-    this.appId = this.configService.get('ZALOPAY_APP_ID');
-    this.key1 = this.configService.get('ZALOPAY_KEY1');
+    this.appId = this.configService.get('ZALOPAY_APP_ID')|| '';
+    this.key1 = this.configService.get('ZALOPAY_KEY1')|| '';
     this.key2 = this.configService.get('ZALOPAY_KEY2', this.key1); // Fallback to key1
-    this.apiUrl = this.configService.get('ZALOPAY_API_URL');
+    this.apiUrl = this.configService.get('ZALOPAY_API_URL')|| '';
     this.queryUrl = this.configService.get('ZALOPAY_QUERY_URL', 'https://sandbox.zalopay.com.vn/v001/tpe/getstatusbyapptransid');
 
     if (!this.appId || !this.key1) {
