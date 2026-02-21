@@ -10,7 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config'; // <--- 1. IMPORT CONFIG SERVICE
+import { ConfigService } from '@nestjs/config'; 
 import { SendMessageDto, VotePollDto, ReactMessageDto } from './dto/chat.dto';
 
 @WebSocketGateway({
@@ -26,7 +26,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly configService: ConfigService, 
   ) {}
 
-  // 1. AUTH & CONNECTION
   async handleConnection(client: Socket) {
     try {
       const token = client.handshake.query.token as string;
@@ -34,7 +33,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const secret = this.configService.get<string>('JWT_SECRET'); 
 
-      // Verify token với secret lấy từ file .env
       const payload = this.jwtService.verify(token, { secret }); 
       
       client.data.user = payload; 
@@ -48,8 +46,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`User disconnected: ${client.id}`);
   }
 
-  // 2. JOIN ROOM
-  // [UPDATED] Changed from group_id to journey_id
   @SubscribeMessage('join_room')
   handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { journey_id: string }) {
     if (client.data.user) {
@@ -59,8 +55,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // 3. SEND MESSAGE
-  // [UPDATED] Changed from group_id to journey_id
   @SubscribeMessage('send_message')
   async handleSendMessage(@ConnectedSocket() client: Socket, @MessageBody() dto: SendMessageDto) {
     try {
@@ -72,9 +66,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('error', { message: error.message });
     }
   }
-  
-  // 4. VOTE POLL
-  // [UPDATED] Changed from group_id to journey_id
+
   @SubscribeMessage('vote_poll')
   async handleVotePoll(@ConnectedSocket() client: Socket, @MessageBody() dto: VotePollDto) {
     try {
@@ -87,17 +79,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // 5. REACT MESSAGE
-  // [UPDATED] Changed from group_id to journey_id
   @SubscribeMessage('react_message')
   async handleReactMessage(@ConnectedSocket() client: Socket, @MessageBody() dto: ReactMessageDto) {
     try {
       const userId = client.data.user.sub;
       
-      // Gọi service xử lý
       const result = await this.chatService.reactMessage(dto.message_id, userId, dto.emoji);
-      
-      // [UPDATED] Use journey_id instead of group_id
+
       const roomId = `journey_${dto.journey_id}`;
       this.server.to(roomId).emit('reaction_updated', result);
       

@@ -43,7 +43,6 @@ export class FriendsService {
     return await this.friendRepo.save(friendship);
   }
 
-  // 2. Chấp nhận / Chặn / Từ chối
   async respondRequest(userId: string, friendshipId: string, status: FriendStatus) {
     const friendship = await this.friendRepo.findOne({ where: { _id: new ObjectId(friendshipId) } });
     
@@ -51,13 +50,9 @@ export class FriendsService {
     if (friendship.recipient_id !== userId) throw new BadRequestException('Bạn không có quyền xử lý lời mời này');
     if (friendship.status !== FriendStatus.PENDING) throw new BadRequestException('Lời mời đã được xử lý trước đó');
 
-    // Nếu từ chối thì xóa luôn record để có thể gửi lại sau này (hoặc giữ lại làm lịch sử tùy logic)
-    // Ở đây giả sử Accept
     friendship.status = status;
     await this.friendRepo.save(friendship);
-
-    // [TODO] Nếu Accepted -> Sync vào UserTravelProfile.friend_ids để thuật toán gợi ý chạy nhanh hơn
-    
+ 
     return { success: true, status };
   }
 

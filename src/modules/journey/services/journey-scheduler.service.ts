@@ -46,29 +46,23 @@ export class JourneySchedulerService {
 
     for (let i = 0; i < day.stops.length; i++) {
       const currentStop = day.stops[i];
-      // Nếu là stop đầu tiên của ngày -> So sánh với stop cuối ngày trước
-      // Nếu không -> So sánh với stop liền trước trong cùng ngày
+
       const prevStop = i === 0 ? prevDayLastStop : day.stops[i - 1];
       const isFirstStopOfDay = i === 0;
 
-      // Lưu EndTime gốc user gửi lên để validate
       const userOriginalEndTime = currentStop.end_time;
 
-      // 1. Tính Start Time
       this.calculateTransitAndStartTime(currentStop, prevStop, placeMap, isFirstStopOfDay);
 
-      // 2. Validate Logic
       if (userOriginalEndTime) {
           this.validateTimeConstraints(day, currentStop, userOriginalEndTime);
       }
 
-      // 3. Tính End Time
       this.calculateEndTime(currentStop, userOriginalEndTime);
 
       currentStop.sequence = i + 1;
     }
 
-    // 4. Phân tích mật độ
     this.analyzeScheduleDensity(day);
   }
 
@@ -80,7 +74,6 @@ export class JourneySchedulerService {
   ) {
     const originalStartTime = currentStop.start_time;
 
-    // Nếu không có điểm trước (Ngày 1, Stop 1), không tính transit
     if (!prevStop) {
       currentStop.transit_from_previous = null;
       if (!currentStop.start_time) currentStop.start_time = '08:00';
@@ -94,13 +87,12 @@ export class JourneySchedulerService {
     let distanceVal = 0;
     let mode = 'DRIVING';
 
-    // Ưu tiên Manual Transit (nếu user nhập tay)
     if (currentStop.is_manual_transit && currentStop.transit_from_previous?.duration_minutes) {
       travelMinutes = currentStop.transit_from_previous.duration_minutes;
       distanceVal = currentStop.transit_from_previous.distance_km || 0;
       mode = currentStop.transit_from_previous.mode;
     }
-    // Tính tự động bằng Haversine
+
     else if (prevPlace?.location?.coordinates && currentPlace?.location?.coordinates) {
       distanceVal = JourneyUtils.getHaversineDistance(
         prevPlace.location.coordinates[1], prevPlace.location.coordinates[0],

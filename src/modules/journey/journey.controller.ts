@@ -188,9 +188,6 @@ export class JourneysController {
     return this.journeysService.replyJoinRequest(journeyId, requestUserId, userId, dto);
   }
 
-  // =================================================================
-  // MEMBER MANAGEMENT (Merged from Groups)
-  // =================================================================
 
   @Post('join')
   @ApiBearerAuth()

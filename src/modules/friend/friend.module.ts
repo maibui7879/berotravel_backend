@@ -9,7 +9,6 @@ import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
-    // 3. Đăng ký Entity vào đây thì Service mới dùng được @InjectRepository
     TypeOrmModule.forFeature([Friendship, User]), 
   ],
   controllers: [FriendsController],

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { envValidationSchema } from './configs/env.validation';
@@ -13,6 +13,13 @@ import { JourneysModule } from './modules/journey/journey.module';
 import { NotificationsModule } from './modules/notification/notification.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { FriendModule } from './modules/friend/friend.module';
+import { RecommendationsModule } from './modules/recommendations/recommendations.module';
+import { EmailModule } from './modules/email/email.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { CacheModule } from './common/cache/cache.module';
+import { LoggerModule } from './common/logger/logger.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { HttpLoggerMiddleware } from './common/logger/http-logger.middleware';
 
 @Module({
   imports: [
@@ -36,6 +43,8 @@ import { FriendModule } from './modules/friend/friend.module';
         logging: true,
       }),
     }),
+    CacheModule,
+    LoggerModule,
     UsersModule,
     AuthModule,
     PlacesModule,
@@ -46,6 +55,14 @@ import { FriendModule } from './modules/friend/friend.module';
     NotificationsModule,
     FavoritesModule,
     FriendModule,
+    RecommendationsModule,
+    EmailModule,
+    PaymentsModule,
+    AdminModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(HttpLoggerMiddleware).forRoutes('*');
+  }
+}
