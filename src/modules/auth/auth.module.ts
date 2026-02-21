@@ -6,10 +6,14 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { AtStrategy } from './strategies/at.strategy';
 import { RtStrategy } from './strategies/rt.strategy';
-
+import { UsersModule } from '../users/users.module';
+import { GoogleStrategy } from './strategies/google.strategy';
 @Module({
   imports: [TypeOrmModule.forFeature([User]), JwtModule.register({})],
   controllers: [AuthController],
-  providers: [AuthService, AtStrategy, RtStrategy,],
+  providers: [AuthService, 
+    AtStrategy, 
+    RtStrategy, 
+    GoogleStrategy,],
 })
 export class AuthModule {}

@@ -7,4 +7,7 @@ export const envValidationSchema = Joi.object({
   DB_NAME: Joi.string().required().default('berotravel'),
   GEMINI_API_KEY: Joi.string().required(),
   JWT_SECRET: Joi.string().required(),
+  GOOGLE_CLIENT_ID: Joi.string().required(),
+  GOOGLE_CLIENT_SECRET: Joi.string().required(),
+  GOOGLE_REDIRECT_URI: Joi.string().required(),
 });

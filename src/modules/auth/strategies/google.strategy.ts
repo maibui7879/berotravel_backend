@@ -10,7 +10,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       // [FIX] Thêm <string> và dấu ! để khẳng định giá trị không undefined
       clientID: configService.get<string>('GOOGLE_CLIENT_ID')!,
       clientSecret: configService.get<string>('GOOGLE_CLIENT_SECRET')!,
-      callbackURL: configService.get<string>('GOOGLE_CALLBACK_URL')!,
+      callbackURL: configService.get<string>('GOOGLE_REDIRECT_URI')!,
       // [QUAN TRỌNG] Thêm scope để lấy dữ liệu profile
       scope: ['email', 'profile'],
     });

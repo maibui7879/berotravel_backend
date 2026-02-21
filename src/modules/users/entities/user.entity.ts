@@ -8,7 +8,7 @@ export enum AuthProvider {
 }
 
 export interface SocialProfile {
-  providerId: string;
+  providerId?: string;
   email?: string;
   displayName?: string;
   picture?: string;
@@ -56,7 +56,8 @@ export class User {
   @Column({ type: 'array', default: ['email'] })
   authProviders: AuthProvider[];
 
-
+  @Column('json', { nullable: true })
+  socialProfile: SocialProfile;
 
   @Column({ nullable: true, select: false })
   hashedRt: string | null;

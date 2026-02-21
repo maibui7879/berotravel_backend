@@ -2,7 +2,6 @@ import {
   Injectable, 
   ForbiddenException, 
   ConflictException, 
-  BadRequestException 
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -10,7 +9,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 import * as bcrypt from 'bcrypt';
-import axios from 'axios';
 
 // Entities & Enums
 import { User, AuthProvider, SocialProfile } from '../users/entities/user.entity';
@@ -29,31 +27,7 @@ export class AuthService {
     private config: ConfigService,
   ) {}
 
-
-  async getTokens(userId: string, email: string, role: string) {
-    const [at, rt] = await Promise.all([
-      this.jwtService.signAsync(
-        { sub: userId, email, role },
-        { 
-          secret: this.config.get<string>('JWT_SECRET'), 
-          expiresIn: '1d' 
-        },
-      ),
-      this.jwtService.signAsync(
-        { sub: userId, email, role },
-        { 
-          secret: this.config.get<string>('RT_SECRET'), 
-          expiresIn: '7d' 
-        },
-      ),
-    ]);
-    return { access_token: at, refresh_token: rt };
-  }
-
-  async updateRtHash(userId: string, rt: string) {
-    const hash = await bcrypt.hash(rt, 10);
-    await this.userRepository.update(new ObjectId(userId), { hashedRt: hash });
-  }
+  // ==================== AUTH LOGIC ====================
 
   async signUp(dto: CreateUserDto) {
     const email = dto.email.toLowerCase();
@@ -84,9 +58,8 @@ export class AuthService {
 
     if (!user) throw new ForbiddenException('Tài khoản không tồn tại');
     
-    // Check password existence (Social account check)
     if (!user.password) {
-      throw new ForbiddenException('Tài khoản này được đăng ký qua MXH. Vui lòng đăng nhập bằng Google/Facebook.');
+      throw new ForbiddenException('Tài khoản này được đăng ký qua MXH. Vui lòng đăng nhập bằng Google.');
     }
 
     const passwordMatches = await bcrypt.compare(dto.password, user.password);
@@ -94,6 +67,61 @@ export class AuthService {
 
     return this.generateAuthResponse(user, false);
   }
+
+  // ===== THÊM LOGIC XỬ LÝ GOOGLE LOGIN =====
+  async googleLogin(googleUser: any) {
+    if (!googleUser || !googleUser.email) {
+      throw new ForbiddenException('Không lấy được thông tin email từ Google');
+    }
+
+    const email = googleUser.email.toLowerCase();
+    let user = await this.userRepository.findOneBy({ email });
+    let isNewUser = false;
+
+    if (!user) {
+      // User chưa tồn tại -> Tạo mới (Đăng ký bằng Google)
+      isNewUser = true;
+      const newUser = {
+        email: email,
+        fullName: googleUser.displayName || `${googleUser.firstName} ${googleUser.lastName}`.trim(),
+        avatar: googleUser.picture,
+        role: Role.USER,
+        authProviders: [AuthProvider.GOOGLE],
+        socialProfile: {
+          googleId: googleUser.providerId
+        },
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+      
+      user = await this.userRepository.save(newUser as unknown as User);
+    } else {
+      // Nếu user đã tồn tại nhưng chưa có Google AuthProvider -> Cập nhật thêm Provider
+      if (!user.authProviders?.includes(AuthProvider.GOOGLE)) {
+        user.authProviders = [...(user.authProviders || []), AuthProvider.GOOGLE];
+        
+        // Khởi tạo socialProfile nếu chưa có
+        if (!user.socialProfile) {
+          user.socialProfile = { providerId: googleUser.providerId };
+        } else {
+          user.socialProfile.providerId = googleUser.providerId;
+        }
+        user.socialProfile.providerId = googleUser.providerId;
+        
+        // Cập nhật avatar nếu User chưa có ảnh đại diện
+        if (!user.avatar && googleUser.picture) {
+           user.avatar = googleUser.picture;
+        }
+
+        await this.userRepository.save(user);
+      }
+    }
+
+    // Sinh token và trả về Frontend
+    return this.generateAuthResponse(user, isNewUser);
+  }
+
+  // ==================== TOKEN MGMT ====================
 
   async logout(userId: string) {
     await this.userRepository.update(new ObjectId(userId), { hashedRt: null });
@@ -113,6 +141,32 @@ export class AuthService {
     return tokens;
   }
 
+  // ==================== HELPER METHODS ====================
+
+  async getTokens(userId: string, email: string, role: string) {
+    const [at, rt] = await Promise.all([
+      this.jwtService.signAsync(
+        { sub: userId, email, role },
+        { 
+          secret: this.config.get<string>('JWT_SECRET'), 
+          expiresIn: '1d' 
+        },
+      ),
+      this.jwtService.signAsync(
+        { sub: userId, email, role },
+        { 
+          secret: this.config.get<string>('RT_SECRET'), 
+          expiresIn: '7d' 
+        },
+      ),
+    ]);
+    return { access_token: at, refresh_token: rt };
+  }
+
+  async updateRtHash(userId: string, rt: string) {
+    const hash = await bcrypt.hash(rt, 10);
+    await this.userRepository.update(new ObjectId(userId), { hashedRt: hash });
+  }
 
   private async generateAuthResponse(user: User, isNewUser: boolean) {
     const tokens = await this.getTokens(user._id.toString(), user.email, user.role);

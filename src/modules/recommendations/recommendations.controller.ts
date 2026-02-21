@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Query, UseGuards, Req } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { AtGuard } from '../../common/guards/at.guard';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { RecommendationEngineService } from './services/recommendation-engine.service';
@@ -22,19 +22,17 @@ export class RecommendationsController {
   /**
    * GET /recommendations/places
    * Lấy danh sách địa điểm gợi ý dựa trên Travel DNA của user
-   * 
-   * Query params:
-   * - limit: số lượng (default 10)
-   * - skip: pagination offset (default 0)
-   * - category: lọc theo category
-   * - tags: lọc theo tags
-   * - latitude, longitude, maxDistance: geo search
    */
   @UseGuards(AtGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Get personalized place recommendations',
-    description: 'Returns places recommended based on user Travel DNA and interests',
+    summary: 'Lấy danh sách địa điểm gợi ý (Cá nhân hóa)',
+    description: 'Trả về các địa điểm phù hợp nhất dựa trên vector sở thích (Travel DNA) và lịch sử tìm kiếm của người dùng.',
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Danh sách địa điểm gợi ý kèm theo điểm số phù hợp (matching_score).', 
+    type: [RecommendedPlaceDto] 
   })
   @Get('places')
   async getRecommendedPlaces(
@@ -51,21 +49,18 @@ export class RecommendationsController {
   /**
    * POST /recommendations/itinerary/auto-generate
    * Tạo itinerary tự động dựa trên số ngày, budget, và sở thích
-   * 
-   * Body:
-   * - days: số ngày (1-30)
-   * - budget: ngân sách tổng (optional)
-   * - travelStyle: 'budget' | 'comfort' | 'luxury'
-   * - pace: 'relaxed' | 'moderate' | 'fast'
-   * 
-   * Response: Full itinerary với tất cả details
    */
   @UseGuards(AtGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Auto-generate full itinerary',
-    description:
-      'Generate a complete trip itinerary based on days, budget, and user preferences',
+    summary: 'AI Tạo lịch trình tự động (Auto-Itinerary)',
+    description: 'Hệ thống tự động lấp đầy các ngày bằng các địa điểm gợi ý, cân đối thời gian di chuyển và ngân sách.',
+  })
+  @ApiBody({ type: AutoItineraryDto })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Lịch trình được tạo thành công.', 
+    type: AutoItineraryResponseDto 
   })
   @Post('itinerary/auto-generate')
   async generateAutoItinerary(
@@ -81,6 +76,11 @@ export class RecommendationsController {
    */
   @UseGuards(AtGuard)
   @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Thống kê Travel DNA của người dùng',
+    description: 'Trả về dữ liệu thống kê hệ thống đã học được gì từ hành vi của user này.',
+  })
+  @ApiResponse({ status: 200, description: 'Dữ liệu thống kê sở thích.' })
   @Get('stats')
   async getRecommendationStats(@GetCurrentUser('sub') userId: string) {
     return {

@@ -1,10 +1,13 @@
 import { 
   Controller, 
   Post, 
+  Get,
   Body, 
   UseGuards, 
   HttpCode, 
-  HttpStatus 
+  HttpStatus, 
+  Req,
+  Res
 } from '@nestjs/common';
 import { 
   ApiTags, 
@@ -13,15 +16,12 @@ import {
   ApiBody, 
   ApiResponse 
 } from '@nestjs/swagger';
+import { AuthGuard } from '@nestjs/passport';
+import type { Request, Response } from 'express';
 
 import { AuthService } from './auth.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
-import { 
-  FacebookLoginDto, 
-  GoogleLoginDto, 
-  SocialLoginResponseDto 
-} from './dto/social-login.dto';
 
 // Decorators & Guards
 import { Public } from 'src/common/decorators/public.decorator';
@@ -53,6 +53,35 @@ export class AuthController {
     return this.authService.signIn(dto);
   }
 
+  // ==================== GOOGLE SOCIAL AUTH ====================
+
+  @Public()
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Bắt đầu luồng đăng nhập Google (Frontend chuyển hướng user tới đây)' })
+  googleAuth() {
+    // Luồng sẽ do passport-google-oauth20 tự động xử lý
+  }
+
+  @Public()
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Google Callback (Google trả data về đây)' })
+  async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
+    // req.user sẽ chứa data mà GoogleStrategy trả về trong hàm `validate`
+    const { user } = req;
+    
+    // Gọi hàm xử lý logic lưu User và sinh Token
+    const authData = await this.authService.googleLogin(user);
+
+    // CHUYỂN HƯỚNG VỀ FRONTEND KÈM THEO TOKEN (Tuỳ chỉnh URL cho Frontend của bạn)
+    // Ví dụ URL Frontend: http://localhost:3000/auth/success
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const redirectUrl = `${frontendUrl}/auth/success?access_token=${authData.access_token}&refresh_token=${authData.refresh_token}`;
+    
+    return res.redirect(redirectUrl);
+  }
+
   // ==================== TOKEN MGMT ====================
 
   @Post('logout')
@@ -75,5 +104,4 @@ export class AuthController {
   ) {
     return this.authService.refreshTokens(userId, rt);
   }
-
 }
