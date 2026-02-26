@@ -120,13 +120,18 @@ export class UserProfileService {
     await this.profileRepo.save(profile);
   }
 
-  // Helper: Tìm tag từ keyword
+  // Helper: Tìm tag từ keyword (ĐÃ FIX LỖI CRASH REGEX)
   private async extractTagsFromKeyword(keyword: string): Promise<string[]> {
+      if (!keyword || keyword.trim() === '') return [];
+
+      // Dọn dẹp ký tự đặc biệt để tránh lỗi sập Regex (500 Internal Server Error)
+      const safeKeyword = keyword.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+
       const places = await this.placeRepo.find({ 
           where: { 
              $or: [
-                 { name: { $regex: new RegExp(keyword, 'i') } },
-                 { tags: { $in: [new RegExp(keyword, 'i')] } }
+                 { name: { $regex: new RegExp(safeKeyword, 'i') } },
+                 { tags: { $in: [new RegExp(safeKeyword, 'i')] } }
              ]
           } as any,
           take: 5,
@@ -150,8 +155,28 @@ export class UserProfileService {
       );
   }
 
+  // ĐÃ FIX: Trả về Object đã được format sẵn mảng và sắp xếp giảm dần cho Frontend
   async getInterestVector(userId: string) {
     const profile = await this.profileRepo.findOne({ where: { user_id: userId } });
-    return profile ? profile.interest_vector : {};
+    
+    if (!profile) {
+      return { long_term: [], short_term: [], total_actions: 0 };
+    }
+
+    // 1. Chuyển Object thành Array và Sort giảm dần (Dễ vẽ biểu đồ)
+    const longTerm = Object.entries(profile.interest_vector || {})
+      .map(([tag, score]) => ({ tag, score }))
+      .sort((a, b) => b.score - a.score);
+
+    // 2. Lấy Short-term và sort giảm dần
+    const shortTerm = (profile.short_term_interests || [])
+      .map(item => ({ tag: item.tag, score: item.score, last_active: item.last_active }))
+      .sort((a, b) => b.score - a.score);
+
+    return {
+      long_term: longTerm,
+      short_term: shortTerm,
+      total_actions: profile.total_actions || 0
+    };
   }
 }

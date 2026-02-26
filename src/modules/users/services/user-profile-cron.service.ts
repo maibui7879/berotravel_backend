@@ -29,8 +29,8 @@ export class UserProfileCronService {
     for (const profile of profiles) {
         let hasChange = false;
 
-        // Duyệt qua từng category trong vector
-        for (const [category, score] of Object.entries(profile.interest_vector)) {
+        // ĐÃ FIX: Thêm `|| {}` để tránh crash app nếu interest_vector bị null/undefined
+        for (const [category, score] of Object.entries(profile.interest_vector || {})) {
             // Giảm điểm
             let newScore = score * DECAY_FACTOR;
 

@@ -2,12 +2,21 @@ import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { MessageType } from '../entities/chat-message.entity';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-// [UPDATED] Gửi tin nhắn - journey_id thay vì group_id
 export class SendMessageDto {
-  @ApiProperty({ description: 'Journey ID' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({ description: 'ID của phòng chat (nếu đã có)' })
+  @IsOptional()
   @IsString()
-  journey_id: string;
+  room_id?: string;
+
+  @ApiPropertyOptional({ description: 'ID của Journey (Nếu nhắn vào group chuyến đi)' })
+  @IsOptional()
+  @IsString()
+  journey_id?: string;
+
+  @ApiPropertyOptional({ description: 'ID người nhận (Nếu là chat 1-1)' })
+  @IsOptional()
+  @IsString()
+  receiver_id?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -33,7 +42,7 @@ export class VotePollDto {
   @ApiProperty({ description: 'Journey ID' })
   @IsNotEmpty()
   @IsString()
-  journey_id: string;
+  room_id: string;
 
   @ApiProperty()
   @IsNotEmpty()
@@ -51,7 +60,7 @@ export class ReactMessageDto {
   @ApiProperty({ description: 'Journey ID' })
   @IsNotEmpty()
   @IsString()
-  journey_id: string;
+  room_id: string;
 
   @ApiProperty()
   @IsNotEmpty()

@@ -9,11 +9,13 @@ import { MomoService } from './services/momo.service';
 import { ZalopayService } from './services/zalopay.service';
 import { PayoutService } from './services/payout.service';
 import { Payment, Payout, Refund } from './entities/payment.entity';
+import { BookingsModule } from '../bookings/bookings.module';
 
 @Module({
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature([Payment, Payout, Refund]),
+    BookingsModule
   ],
   controllers: [PaymentsController],
   providers: [PaymentService, VnpayService, MomoService, ZalopayService, PayoutService],

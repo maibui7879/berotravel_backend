@@ -24,8 +24,11 @@ export class ChatMessage {
 
   // [UPDATED] Renamed from group_id to journey_id (merged structure)
   @Column()
-  journey_id: string;
+  room_id: string;
 
+  @Column({ type: 'string', default: 'JOURNEY' })
+  room_type: string;
+  
   // [DEPRECATED] Keeping for backward compatibility temporarily
   @Column({ nullable: true })
   group_id?: string;

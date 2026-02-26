@@ -14,7 +14,6 @@ import { GetCurrentUser } from '../../common/decorators/get-current-user.decorat
 import { PaymentService } from './services/payment.service';
 import {
   InitiatePaymentDto,
-  PaymentCallbackDto,
   PaymentResponseDto,
   RefundRequestDto,
 } from './dto/payment.dto';
@@ -25,17 +24,16 @@ export class PaymentsController {
   constructor(private readonly paymentService: PaymentService) {}
 
   /**
-   * POST /payments/initiate
-   * Khởi tạo payment intent tại payment gateway
+   * Khởi tạo thanh toán
    */
   @UseGuards(AtGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Khởi tạo thanh toán cho Booking',
-    description: 'Tạo phiên thanh toán mới (Payment Intent) và trả về đường dẫn thanh toán để frontend redirect người dùng tới VNPay, MoMo, Stripe, v.v.',
+    description: 'Tạo phiên thanh toán mới và trả về đường dẫn redirect đến cổng thanh toán.',
   })
   @ApiBody({ type: InitiatePaymentDto })
-  @ApiResponse({ status: 201, description: 'Khởi tạo thanh toán thành công.', type: PaymentResponseDto })
+  @ApiResponse({ status: 201, description: 'Khởi tạo thành công.', type: PaymentResponseDto })
   @Post('initiate')
   async initiatePayment(
     @GetCurrentUser('sub') userId: string,
@@ -45,15 +43,12 @@ export class PaymentsController {
   }
 
   /**
-   * GET /payments/:paymentId/status
-   * Check payment status
+   * Kiểm tra trạng thái giao dịch
    */
   @ApiOperation({
     summary: 'Kiểm tra trạng thái thanh toán',
-    description: 'Lấy trạng thái mới nhất của một giao dịch thanh toán cụ thể.',
   })
-  @ApiParam({ name: 'paymentId', description: 'Mã Payment ID cần kiểm tra', example: 'pay_123456789' })
-  @ApiResponse({ status: 200, description: 'Trả về trạng thái của giao dịch.' })
+  @ApiParam({ name: 'paymentId', example: '5f9b3b...' })
   @Get(':paymentId/status')
   async getPaymentStatus(@Param('paymentId') paymentId: string) {
     const status = await this.paymentService.getPaymentStatus(paymentId);
@@ -61,132 +56,52 @@ export class PaymentsController {
   }
 
   /**
-   * POST /payments/refund
-   * Request refund
+   * Yêu cầu hoàn tiền
    */
   @UseGuards(AtGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Yêu cầu hoàn tiền (Refund)',
-    description: 'Người dùng gửi yêu cầu hoàn tiền cho một booking đã thanh toán thành công.',
   })
   @ApiBody({ type: RefundRequestDto })
-  @ApiResponse({ status: 201, description: 'Yêu cầu hoàn tiền đã được ghi nhận thành công.' })
-  @ApiResponse({ status: 400, description: 'Lỗi: Booking không đủ điều kiện hoàn tiền.' })
   @Post('refund')
   async requestRefund(
     @GetCurrentUser('sub') userId: string,
     @Body() dto: RefundRequestDto,
-  ): Promise<{ message: string; refund_id?: string }> {
+  ): Promise<{ message: string }> {
     try {
       await this.paymentService.requestRefund(userId, dto.booking_id, dto.reason);
-      return { message: 'Refund request submitted' };
+      return { message: 'Yêu cầu hoàn tiền đã được tiếp nhận.' };
     } catch (error) {
       throw new BadRequestException(error.message);
     }
   }
 
   // =================================================================
-  // NHÓM API: WEBHOOKS (Dành cho Server của Đối Tác gọi vào)
+  // UNIVERSAL WEBHOOK HANDLER
   // =================================================================
-
   @ApiOperation({
-    summary: 'VNPay Webhook (Hệ thống tự động gọi)',
-    description: 'Endpoint nhận dữ liệu trả về từ hệ thống VNPay sau khi người dùng thanh toán xong.',
+    summary: 'Universal Webhook Endpoint',
+    description: 'Hệ thống tự động phân loại và nhận sự kiện từ các cổng thanh toán.',
   })
   @ApiResponse({ status: 200, description: 'Webhook xử lý thành công.' })
-  @Post('webhook/vnpay')
-  async vnpayWebhook(@Query() query: any): Promise<{ message: string }> {
-    const dto: PaymentCallbackDto = {
-      transaction_id: query.vnp_TransactionNo,
-      order_info: query.vnp_OrderInfo,
-      response_code: query.vnp_ResponseCode,
-      amount: query.vnp_Amount ? Number(query.vnp_Amount) / 100 : 0,
-      order_id: query.vnp_TxnRef,
-      bank_code: query.vnp_BankCode,
-      bank_tran_no: query.vnp_BankTranNo,
-      card_type: query.vnp_CardType,
-      timestamp: Number(query.vnp_PayDate),
-      signature: query.vnp_SecureHash,
-    };
-
+  @Post('webhook/:gateway')
+  async handleWebhook(
+    @Param('gateway') gateway: string,
+    @Body() body: any,
+    @Query() query: any
+  ): Promise<{ success: boolean; message?: string }> {
+    // VNPay thường bắn qua Query, MoMo/ZaloPay/Stripe bắn qua Body
+    const payload = Object.keys(body).length > 0 ? body : query;
+    
     try {
-      await this.paymentService.handlePaymentCallback(dto);
-      return { message: 'Payment updated' };
+      await this.paymentService.handlePaymentCallback(gateway.toUpperCase(), payload);
+      return { success: true };
     } catch (error) {
-      return { message: 'Webhook processing error' };
-    }
-  }
-
-  @ApiOperation({
-    summary: 'Stripe Webhook (Hệ thống tự động gọi)',
-    description: 'Endpoint nhận dữ liệu trả về từ hệ thống Stripe events.',
-  })
-  @ApiResponse({ status: 200, description: 'Webhook xử lý thành công.' })
-  @Post('webhook/stripe')
-  async stripeWebhook(@Body() event: any): Promise<{ received: boolean }> {
-    if (event.type === 'payment_intent.succeeded') {
-      const intent = event.data.object;
-      const dto: PaymentCallbackDto = {
-        transaction_id: intent.id,
-        order_info: intent.description,
-        payment_intent_id: intent.id,
-        charge_id: intent.latest_charge,
-        status: 'succeeded',
-        response_code: '00',
-      };
-
-      await this.paymentService.handlePaymentCallback(dto);
-    }
-
-    return { received: true };
-  }
-
-  @ApiOperation({
-    summary: 'MoMo Webhook (Hệ thống tự động gọi)',
-    description: 'Endpoint nhận dữ liệu trả về từ hệ thống ví MoMo.',
-  })
-  @ApiResponse({ status: 200, description: 'Webhook xử lý thành công.' })
-  @Post('webhook/momo')
-  async momoWebhook(@Body() body: any): Promise<{ message: string }> {
-    try {
-      const dto: PaymentCallbackDto = {
-        transaction_id: body.transId,
-        order_info: `Booking ${body.orderId}`,
-        response_code: body.resultCode === 0 ? '00' : body.resultCode.toString(),
-        amount: body.amount,
-        order_id: body.orderId,
-        timestamp: body.timestamp,
-      };
-
-      await this.paymentService.handlePaymentCallback(dto);
-      return { message: 'MoMo payment updated' };
-    } catch (error) {
-      return { message: 'Webhook processing error' };
-    }
-  }
-
-  @ApiOperation({
-    summary: 'ZaloPay Webhook (Hệ thống tự động gọi)',
-    description: 'Endpoint nhận sự kiện thanh toán từ hệ thống ZaloPay.',
-  })
-  @ApiResponse({ status: 200, description: 'Webhook xử lý thành công.' })
-  @Post('webhook/zalopay')
-  async zalopayWebhook(@Body() body: any): Promise<{ message: string }> {
-    try {
-      const dto: PaymentCallbackDto = {
-        transaction_id: body.app_trans_id,
-        order_info: `Booking ${body.app_trans_id}`,
-        response_code: body.result_code === 1 ? '00' : body.result_code.toString(),
-        amount: body.amount,
-        order_id: body.app_trans_id,
-        timestamp: body.timestamp,
-      };
-
-      await this.paymentService.handlePaymentCallback(dto);
-      return { message: 'ZaloPay payment updated' };
-    } catch (error) {
-      return { message: 'Webhook processing error' };
+      // Luôn trả về 200 cho Gateway để tránh bị gọi lại (retry loop), 
+      // Nhưng log lỗi ra hệ thống để Admin xử lý
+      console.error(`[WEBHOOK ERROR - ${gateway.toUpperCase()}]`, error.message);
+      return { success: false, message: error.message };
     }
   }
 }

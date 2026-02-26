@@ -63,7 +63,7 @@ export class RecommendationEngineService {
         $near: {
           $geometry: {
             type: 'Point',
-            coordinates: [options.longitude, options.latitude],
+            coordinates: [Number(options.longitude), Number(options.latitude)],
           },
           $maxDistance: options.maxDistance * 1000, // Convert km to meters
         },
@@ -187,7 +187,7 @@ export class RecommendationEngineService {
   private async getPopularPlaces(
     options: GetRecommendedPlacesDto,
   ): Promise<RecommendedPlaceDto[]> {
-    const query: any = {};
+    const query: any = { status: 'APPROVED' };
     
     if (options.category) {
       query.category = { $in: [options.category] };

@@ -7,10 +7,11 @@ import { ChatMessage } from './entities/chat-message.entity';
 import { JwtModule } from '@nestjs/jwt';
 import { User } from '../users/entities/user.entity';
 import { JourneysModule } from '../journey/journey.module';
+import { ChatConversation } from './entities/chat.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ChatMessage, User]),
+    TypeOrmModule.forFeature([ChatMessage, ChatConversation, User]),
     JwtModule.register({}), 
     forwardRef(() => JourneysModule)
   ],

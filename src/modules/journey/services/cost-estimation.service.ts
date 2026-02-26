@@ -13,7 +13,7 @@ import { Place } from '../../places/entities/place.entity';
 // CONFIGURATION & CONSTANTS
 // ============================================================================
 
-const COST_RATES = {
+export const COST_RATES = {
   transportation: {
     DRIVING: 3000,          // VND/km (Xăng xe - Chia sẻ)
     PUBLIC_TRANSPORT: 1000, // VND/km (Vé xe/tàu - Mỗi người 1 vé)

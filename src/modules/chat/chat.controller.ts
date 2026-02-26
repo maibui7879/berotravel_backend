@@ -10,44 +10,51 @@ import { Role } from 'src/common/constants';
 
 @ApiTags('Chat (HTTP API)')
 @Controller('chat')
-@UseGuards(AtGuard, RolesGuard) // Phân quyền
+@UseGuards(AtGuard, RolesGuard)
 @ApiBearerAuth()
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
-  // 1. LẤY LỊCH SỬ
-  @Get('history/:journeyId')
-  @ApiOperation({ summary: 'Lấy lịch sử tin nhắn' })
-  async getHistory(@Param('journeyId') journeyId: string, @GetCurrentUser('sub') userId: string) {
-    return this.chatService.getMessages(journeyId, userId);
+  // 1. LẤY DANH SÁCH CUỘC TRÒ CHUYỆN (INBOX)
+  @Get('conversations')
+  @ApiOperation({ summary: 'Lấy danh sách các cuộc trò chuyện của User' })
+  async getConversations(@GetCurrentUser('sub') userId: string) {
+    return this.chatService.getUserConversations(userId);
   }
 
-  // 2. KHO ẢNH
-  @Get(':journeyId/images')
-  @ApiOperation({ summary: 'Lấy kho ảnh của chuyến đi' })
-  async getImages(@Param('journeyId') journeyId: string, @GetCurrentUser('sub') userId: string) {
-    return this.chatService.getJourneyImages(journeyId, userId);
+  // 2. LẤY LỊCH SỬ TIN NHẮN
+  @Get('history/:roomId')
+  @ApiOperation({ summary: 'Lấy lịch sử tin nhắn trong phòng' })
+  async getHistory(@Param('roomId') roomId: string, @GetCurrentUser('sub') userId: string) {
+    return this.chatService.getMessages(roomId, userId);
   }
 
-  // 3. DANH SÁCH POLLS
-  @Get(':journeyId/polls')
+  // 3. KHO ẢNH
+  @Get(':roomId/images')
+  @ApiOperation({ summary: 'Lấy kho ảnh của phòng chat' })
+  async getImages(@Param('roomId') roomId: string, @GetCurrentUser('sub') userId: string) {
+    return this.chatService.getRoomImages(roomId, userId);
+  }
+
+  // 4. DANH SÁCH POLLS
+  @Get(':roomId/polls')
   @ApiOperation({ summary: 'Lấy danh sách bình chọn' })
-  async getPolls(@Param('journeyId') journeyId: string, @GetCurrentUser('sub') userId: string) {
-    return this.chatService.getJourneyPolls(journeyId, userId);
+  async getPolls(@Param('roomId') roomId: string, @GetCurrentUser('sub') userId: string) {
+    return this.chatService.getRoomPolls(roomId, userId);
   }
 
-  // 4. TÌM KIẾM
-  @Get(':journeyId/search')
+  // 5. TÌM KIẾM
+  @Get(':roomId/search')
   @ApiOperation({ summary: 'Tìm kiếm tin nhắn' })
   async search(
-    @Param('journeyId') journeyId: string,
+    @Param('roomId') roomId: string,
     @Query() query: SearchChatDto,
     @GetCurrentUser('sub') userId: string
   ) {
-    return this.chatService.searchMessages(journeyId, userId, query);
+    return this.chatService.searchMessages(roomId, userId, query);
   }
 
-  // 5. ADMIN XÓA TIN NHẮN
+  // 6. ADMIN XÓA TIN NHẮN
   @Delete(':messageId')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Admin xóa tin nhắn vi phạm' })

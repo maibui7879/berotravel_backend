@@ -46,22 +46,24 @@ export class RecommendationsController {
     };
   }
 
-  /**
-   * GET /recommendations/stats
-   * Lấy stats về recommendations (optional dashboard info)
-   */
   @UseGuards(AtGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Thống kê Travel DNA của người dùng',
-    description: 'Trả về dữ liệu thống kê hệ thống đã học được gì từ hành vi của user này.',
+    summary: 'Tự động tạo lịch trình (Auto Itinerary)',
+    description: 'Tạo lịch trình du lịch tự động dựa trên Travel DNA, số ngày, ngân sách và phong cách du lịch.',
   })
-  @ApiResponse({ status: 200, description: 'Dữ liệu thống kê sở thích.' })
-  @Get('stats')
-  async getRecommendationStats(@GetCurrentUser('sub') userId: string) {
-    return {
-      message: 'Stats endpoint - to be implemented',
-      userId,
-    };
+  @ApiBody({ type: AutoItineraryDto })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Lịch trình được tạo tự động thành công.', 
+    type: AutoItineraryResponseDto 
+  })
+  @Post('itinerary/auto')
+  async generateAutoItinerary(
+    @GetCurrentUser('sub') userId: string,
+    @Body() body: AutoItineraryDto,
+  ): Promise<AutoItineraryResponseDto> {
+    return await this.itineraryGenerator.generateAutoItinerary(userId, body);
   }
+
 }

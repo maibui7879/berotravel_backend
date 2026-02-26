@@ -32,11 +32,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!token) throw new Error('No token');
 
       const secret = this.configService.get<string>('JWT_SECRET'); 
-
       const payload = this.jwtService.verify(token, { secret }); 
       
       client.data.user = payload; 
-      console.log(`User ${payload.sub} connected`);
+      
+      // Mọi user sau khi connect đều tự động Join vào kênh riêng tư của mình (nhận noti 1-1 toàn cầu)
+      const personalRoom = `user_${payload.sub}`;
+      client.join(personalRoom);
+      
+      console.log(`User ${payload.sub} connected & joined global socket ${personalRoom}`);
     } catch (e) {
       client.disconnect();
     }
@@ -46,12 +50,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`User disconnected: ${client.id}`);
   }
 
+  // Client mở một phòng chat cụ thể (màn hình chat)
   @SubscribeMessage('join_room')
-  handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { journey_id: string }) {
-    if (client.data.user) {
-      const roomId = `journey_${data.journey_id}`;
-      client.join(roomId);
-      console.log(`User ${client.data.user.sub} joined journey ${data.journey_id}`);
+  handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { room_id: string }) {
+    if (client.data.user && data.room_id) {
+      const roomIdStr = `room_${data.room_id}`;
+      client.join(roomIdStr);
+      console.log(`User ${client.data.user.sub} is now active in room ${data.room_id}`);
     }
   }
 
@@ -59,9 +64,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleSendMessage(@ConnectedSocket() client: Socket, @MessageBody() dto: SendMessageDto) {
     try {
       const userId = client.data.user.sub;
+      // Lưu vào DB
       const savedMsg = await this.chatService.saveMessage(userId, dto);
-      const roomId = `journey_${dto.journey_id}`;
-      this.server.to(roomId).emit('receive_message', savedMsg);
+      
+      // Phát tới kênh chung của phòng chat (Dành cho những người ĐANG mở màn hình chat này)
+      const targetRoom = `room_${savedMsg.room_id}`;
+      this.server.to(targetRoom).emit('receive_message', savedMsg);
+
+      // Nếu là chat 1-1, bắt buộc phải bắn notification (popup) cho cả user nhận (dù chưa mở màn hình chat)
+      if (dto.receiver_id) {
+        this.server.to(`user_${dto.receiver_id}`).emit('new_message_alert', savedMsg);
+        // Bắn lại cho sender để đồng bộ nếu họ đăng nhập nhiều device
+        this.server.to(`user_${userId}`).emit('new_message_alert', savedMsg); 
+      }
+
     } catch (error) {
       client.emit('error', { message: error.message });
     }
@@ -72,8 +88,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const userId = client.data.user.sub;
       const updatedMsg = await this.chatService.votePoll(dto.message_id, dto.option_id, userId);
-      const roomId = `journey_${dto.journey_id}`;
-      this.server.to(roomId).emit('poll_updated', updatedMsg);
+      
+      if (updatedMsg) {
+        const targetRoom = `room_${updatedMsg.room_id}`;
+        this.server.to(targetRoom).emit('poll_updated', updatedMsg);
+      }
     } catch (error) {
       client.emit('error', { message: error.message });
     }
@@ -83,11 +102,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleReactMessage(@ConnectedSocket() client: Socket, @MessageBody() dto: ReactMessageDto) {
     try {
       const userId = client.data.user.sub;
-      
       const result = await this.chatService.reactMessage(dto.message_id, userId, dto.emoji);
 
-      const roomId = `journey_${dto.journey_id}`;
-      this.server.to(roomId).emit('reaction_updated', result);
+      const targetRoom = `room_${result.room_id}`;
+      this.server.to(targetRoom).emit('reaction_updated', result);
       
     } catch (error) {
       console.error(error);

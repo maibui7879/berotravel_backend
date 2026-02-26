@@ -69,7 +69,7 @@ export class BookingsService {
 
   // ================= NGHIỆP VỤ ĐẶT CHỖ (TRỪ KHO ĐA NGÀY) =================
 
-  async create(dto: any, userId: string) {
+async create(dto: any, userId: string) {
     const { unit_id, check_in, check_out, time_slot, pax_count } = dto;
     const unit = await this.unitRepo.findOne({ where: { _id: new ObjectId(unit_id) } });
     if (!unit) throw new NotFoundException('Loại hình đặt chỗ không tồn tại');
@@ -80,7 +80,7 @@ export class BookingsService {
 
     if ((unit.unit_type === 'ROOM' || unit.unit_type === 'HOUSE') && check_out) {
       const endDate = new Date(new Date(check_out).setHours(0, 0, 0, 0));
-      // Khách sạn: Chỉ trừ kho đến TRƯỚC ngày check-out (ngày trả phòng khách mới có thể vào)
+      // Khách sạn: Chỉ trừ kho đến TRƯỚC ngày check-out
       const tempDate = new Date(startDate);
       while (tempDate < endDate) {
         datesToBook.push(new Date(tempDate));
@@ -92,51 +92,77 @@ export class BookingsService {
 
     if (datesToBook.length === 0) throw new BadRequestException('Ngày đặt không hợp lệ');
 
-    // 2. ATOMIC UPDATE cho từng ngày
+    // 2. ATOMIC UPDATE & CƠ CHẾ ROLLBACK
     let totalCalculatedPrice = 0;
-    for (const date of datesToBook) {
-      const result = await this.availRepo.findOneAndUpdate(
-        {
-          unit_id: unit_id.toString(),
-          date: date,
-          time_slot: time_slot || null,
-          $or: [{ available_count: { $gt: 0 } }, { _id: { $exists: false } }]
-        },
-        {
-          $inc: { booked_count: 1, available_count: -1 },
-          $setOnInsert: {
+    const successfullyBookedDates: Date[] = []; // Mảng lưu các ngày đã trừ kho thành công
+
+    try {
+      for (const date of datesToBook) {
+        const result = await this.availRepo.findOneAndUpdate(
+          {
             unit_id: unit_id.toString(),
             date: date,
             time_slot: time_slot || null,
-            available_count: unit.total_inventory - 1,
-            booked_count: 1
-          }
-        },
-        { upsert: true, returnDocument: 'after' }
-      ) as any;
+            // Chỉ trừ kho nếu số lượng còn > 0 hoặc document chưa tồn tại
+            $or: [{ available_count: { $gt: 0 } }, { _id: { $exists: false } }]
+          },
+          {
+            $inc: { booked_count: 1, available_count: -1 },
+            $setOnInsert: {
+              unit_id: unit_id.toString(),
+              date: date,
+              time_slot: time_slot || null,
+              available_count: unit.total_inventory - 1,
+              booked_count: 1
+            }
+          },
+          { upsert: true, returnDocument: 'after' }
+        ) as any;
 
-      const currentAvail = result.value;
-      if (!currentAvail || currentAvail.available_count < 0) {
-        throw new BadRequestException(`Rất tiếc, ngày ${date.toLocaleDateString()} đã hết chỗ`);
+        const currentAvail = result.value;
+        
+        // Nếu không trừ được kho (tức là đã hết chỗ)
+        if (!currentAvail || currentAvail.available_count < 0) {
+          throw new BadRequestException(`Rất tiếc, ngày ${date.toLocaleDateString('vi-VN')} đã hết chỗ`);
+        }
+        
+        // Đánh dấu ngày này đã trừ kho thành công
+        successfullyBookedDates.push(date);
+        totalCalculatedPrice += currentAvail.price_override || unit.base_price;
       }
-      totalCalculatedPrice += currentAvail.price_override || unit.base_price;
+
+      // 3. Lưu đơn đặt chỗ
+      const booking = this.bookingRepo.create({
+        user_id: userId,
+        place_id: unit.place_id.toString(),
+        unit_id: unit_id.toString(),
+        booking_type: unit.unit_type,
+        check_in: startDate,
+        check_out: check_out ? new Date(check_out) : undefined,
+        time_slot: time_slot || undefined,
+        pax_count: Number(pax_count),
+        total_price: totalCalculatedPrice,
+        status: 'PENDING', // [ĐÃ SỬA]: Vừa tạo xong chỉ được phép PENDING
+      } as any);
+
+      return await this.bookingRepo.save(booking);
+
+    } catch (error) {
+      // [ROLLBACK] Nếu có lỗi xảy ra (hết kho giữa chừng), phải hoàn lại chỗ cho các ngày đã lỡ trừ trước đó
+      if (successfullyBookedDates.length > 0) {
+        await Promise.all(
+          successfullyBookedDates.map(date => 
+            this.availRepo.updateOne(
+              { unit_id: unit_id.toString(), date: date, time_slot: time_slot || null },
+              { $inc: { booked_count: -1, available_count: 1 } }
+            )
+          )
+        );
+      }
+      
+      // Đẩy lỗi ra ngoài để controller trả về client
+      throw error;
     }
-
-    // 3. Lưu đơn đặt chỗ
-    const booking = this.bookingRepo.create({
-      user_id: userId,
-      place_id: unit.place_id.toString(),
-      unit_id: unit_id.toString(),
-      booking_type: unit.unit_type,
-      check_in: startDate,
-      check_out: check_out ? new Date(check_out) : undefined,
-      time_slot: time_slot || undefined,
-      pax_count: Number(pax_count),
-      total_price: totalCalculatedPrice,
-      status: 'CONFIRMED',
-    } as any);
-
-    return await this.bookingRepo.save(booking);
   }
 
   // ================= QUẢN LÝ KHO & ĐƠN HÀNG (GIỮ NGUYÊN) =================
@@ -188,6 +214,14 @@ export class BookingsService {
     const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(placeId) } });
     if (user.role !== Role.ADMIN && place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền');
     return await this.bookingRepo.find({ where: { place_id: placeId }, order: { created_at: -1 } as any });
+  }
+  // Cập nhật trạng thái Booking khi thanh toán thành công
+  async confirmBooking(bookingId: string) {
+    const booking = await this.bookingRepo.findOne({ where: { _id: new ObjectId(bookingId) } });
+    if (!booking) return;
+    
+    booking.status = 'CONFIRMED';
+    await this.bookingRepo.save(booking);
   }
 
   async cancel(id: string, user: any) {

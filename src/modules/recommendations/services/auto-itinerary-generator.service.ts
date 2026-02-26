@@ -7,12 +7,14 @@ import { UserTravelProfile } from '../../users/entities/user-travel-profile.enti
 import { AutoItineraryDto, AutoItineraryResponseDto } from '../dto/recommendation.dto';
 import { RecommendationEngineService } from './recommendation-engine.service';
 
+// IMPORT BẢNG GIÁ DÙNG CHUNG TỪ JOURNEY MODULE
+import { COST_RATES } from '../../journey/services/cost-estimation.service';
+
 /**
  * Auto Itinerary Generator
- * 
- * Tự động tạo itinerary dựa trên:
+ * * Tự động tạo itinerary dựa trên:
  * 1. Số ngày du lịch
- * 2. Ngân sách tổng
+ * 2. Ngân sách tổng (Đã fix logic đồng bộ bảng giá)
  * 3. Travel style (budget/comfort/luxury)
  * 4. Pace (relaxed/moderate/fast)
  * 5. User Travel DNA (sở thích)
@@ -53,9 +55,6 @@ export class AutoItineraryGeneratorService {
 
   /**
    * Tạo itinerary tự động
-   * @param userId 
-   * @param input 
-   * @returns 
    */
   async generateAutoItinerary(
     userId: string,
@@ -68,7 +67,7 @@ export class AutoItineraryGeneratorService {
       throw new Error('Days must be between 1 and 30');
     }
 
-    // 2. Lấy recommended places từ Travel DNA
+    // 2. Lấy recommended places từ Travel DNA (Đã được lọc APPROVED bên kia)
     const recommendedPlaces = await this.recommendationEngine.getRecommendedPlaces(
       userId,
       {
@@ -82,7 +81,7 @@ export class AutoItineraryGeneratorService {
     }
 
     // 3. Tính budget per day
-    const budgetPerDay = input.budget ? Math.floor(input.budget / input.days) : 999999;
+    const budgetPerDay = input.budget ? Math.floor(input.budget / input.days) : 999999999;
     const stopsPerDay = this.STOPS_PER_DAY[input.pace || 'moderate'] || 3;
 
     // 4. Build itinerary
@@ -120,12 +119,20 @@ export class AutoItineraryGeneratorService {
         placesUsed.add(place._id);
         placeIndex = (placeIndex + 1) % recommendedPlaces.length;
 
-        // Skip nếu vượt quá budget
-        if (dayBudget + (place.estimated_cost || 0) > budgetPerDay) {
+        // [FIX LOGIC NGÂN SÁCH] - Lấy giá chuẩn xác từ COST_RATES
+        const cat = Array.isArray(place.category) ? place.category[0] : place.category;
+        const actualEstimatedCost = this.estimatePlaceCost(cat as string, place.estimated_cost || 0, stopNum);
+
+        // Tính cả chi phí di chuyển giả định (10km mỗi chặng)
+        const estimatedTravelDist = 10; 
+        const travelCost = estimatedTravelDist * COST_RATES.transportation.DRIVING; 
+
+        // Rào ngân sách
+        if (dayBudget + actualEstimatedCost + travelCost > budgetPerDay) {
           continue;
         }
 
-        const duration = this.getPlaceDuration(place.category[0]);
+        const duration = this.getPlaceDuration(cat as string);
         const suggestedTime = this.calculateTimeSlot(dayNum, stopNum);
 
         dayStops.push({
@@ -133,11 +140,11 @@ export class AutoItineraryGeneratorService {
           name: place.name,
           category: place.category,
           estimated_duration: duration,
-          estimated_cost: place.estimated_cost || 0,
+          estimated_cost: actualEstimatedCost, // ĐÃ ĐỒNG BỘ VỚI BẢNG GIÁ VND
           suggested_time: suggestedTime,
         });
 
-        dayBudget += place.estimated_cost || 0;
+        dayBudget += actualEstimatedCost;
         dayTravelTime += this.INTER_STOP_TRAVEL_TIME;
       }
 
@@ -160,7 +167,10 @@ export class AutoItineraryGeneratorService {
   private async generateDefaultItinerary(
     input: AutoItineraryDto,
   ): Promise<AutoItineraryResponseDto> {
+    
+    // [FIX BẢO MẬT DỮ LIỆU] - Chỉ lấy địa điểm đã được APPROVED
     const topPlaces = await this.placeRepo.find({
+      where: { status: 'APPROVED' } as any,
       take: input.days * 4,
     });
 
@@ -173,18 +183,29 @@ export class AutoItineraryGeneratorService {
     const stopsPerDay = this.STOPS_PER_DAY[input.pace || 'moderate'] || 3;
 
     for (let dayNum = 1; dayNum <= input.days; dayNum++) {
-      const dayStops = topPlaces
-        .slice((dayNum - 1) * stopsPerDay, dayNum * stopsPerDay)
-        .map((place, idx) => ({
+      const dayStops: any[] = [];
+      let dayBudget = 0;
+      
+      const placesForDay = topPlaces.slice((dayNum - 1) * stopsPerDay, dayNum * stopsPerDay);
+
+      for (let idx = 0; idx < placesForDay.length; idx++) {
+        const place = placesForDay[idx];
+        const cat = Array.isArray(place.category) ? place.category[0] : place.category;
+        
+        // [FIX LOGIC NGÂN SÁCH]
+        const actualEstimatedCost = this.estimatePlaceCost(cat as string, place.priceLevel || 0, idx);
+
+        dayStops.push({
           place_id: place._id.toString(),
           name: place.name,
           category: Array.isArray(place.category) ? place.category : [place.category],
-          estimated_duration: 90,
-          estimated_cost: place.priceLevel || 0,
+          estimated_duration: this.getPlaceDuration(cat as string),
+          estimated_cost: actualEstimatedCost,
           suggested_time: this.calculateTimeSlot(dayNum, idx),
-        }));
-
-      const dayBudget = dayStops.reduce((sum, s) => sum + (s.estimated_cost || 0), 0);
+        });
+        
+        dayBudget += actualEstimatedCost;
+      }
 
       itinerary.days.push({
         day_number: dayNum,
@@ -200,11 +221,39 @@ export class AutoItineraryGeneratorService {
   }
 
   /**
+   * HELPER: TÍNH GIÁ ĐỒNG BỘ VỚI BẢNG COST_RATES TỪ JOURNEY
+   */
+  private estimatePlaceCost(category: string, priceLevel: number, stopIndex: number): number {
+    if (!category) return 100000;
+    const cat = category.toUpperCase();
+
+    // 1. Nếu là địa điểm ăn uống (chia theo bữa sáng/trưa/tối)
+    if (['RESTAURANT', 'CAFE', 'STREET_FOOD'].includes(cat)) {
+      let mealType: 'breakfast' | 'lunch' | 'dinner' = 'lunch';
+      if (stopIndex === 0) mealType = 'breakfast';
+      else if (stopIndex >= 2) mealType = 'dinner';
+
+      const diningCat = COST_RATES.dining[cat as keyof typeof COST_RATES.dining];
+      return diningCat ? diningCat[mealType] : 100000;
+    }
+
+    // 2. Nếu là hoạt động vui chơi/tham quan
+    const defaultActivityCost = (COST_RATES.activities as any)[cat];
+    if (defaultActivityCost !== undefined) {
+      return defaultActivityCost;
+    }
+
+    // 3. Fallback: Nội suy từ mức giá của Google
+    return priceLevel > 0 ? priceLevel * 100000 : 100000;
+  }
+
+  /**
    * Get duration cho mỗi loại địa điểm
    */
   private getPlaceDuration(category: string): number {
+    if (!category) return this.PLACE_DURATIONS.OTHER;
     const normalized = category.toUpperCase();
-    return this.PLACE_DURATIONS[normalized] || this.PLACE_DURATIONS.OTHER;
+    return this.PLACE_DURATIONS[normalized as keyof typeof this.PLACE_DURATIONS] || this.PLACE_DURATIONS.OTHER;
   }
 
   /**
