@@ -47,6 +47,7 @@ export class Place {
   @Column('array')
   tags: string[];
 
+  
   @Column({ type: 'enum', enum: PlaceStatus, default: PlaceStatus.PENDING })
   status: PlaceStatus;
 

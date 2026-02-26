@@ -37,6 +37,7 @@ export enum CostType {
 // [NEW] Enum cho trạng thái Stop (Checklist)
 export enum StopStatus {
   PENDING = 'PENDING',   // Chưa đến
+  INFO_ONLY = 'INFO_ONLY', // [NEW] Chỉ thông tin (Dành cho Google Maps - Không giữ chỗ)
   ARRIVED = 'ARRIVED',   // Đã đến (Check-in)
   SKIPPED = 'SKIPPED'    // Bỏ qua
 }
