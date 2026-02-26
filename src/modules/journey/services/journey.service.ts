@@ -187,27 +187,58 @@ export class JourneysService {
   }
 
   // Complex Logic (Stops)
-  async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
+async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     
     if (!ObjectId.isValid(dto.place_id)) throw new BadRequestException('Place ID không hợp lệ');
-    const placeExists = await this.placeRepo.findOne({ where: { _id: new ObjectId(dto.place_id) }, select: ['_id'] as any });
-    if (!placeExists) throw new NotFoundException('Địa điểm không tồn tại');
+    
+    // [SỬA] Query thêm is_partner và priceLevel để phục vụ rẽ nhánh
+    const place = await this.placeRepo.findOne({ 
+      where: { _id: new ObjectId(dto.place_id) }, 
+      select: ['_id', 'is_partner', 'priceLevel'] as any 
+    });
+    
+    if (!place) throw new NotFoundException('Địa điểm không tồn tại');
     
     const day = journey.days[dto.day_index];
     const dateStr = new Date(day.date).toISOString().split('T')[0];
-    const availabilityInfo = await this.bookingsService.getPlaceAvailability(dto.place_id, dateStr);
     
-    if (availabilityInfo && availabilityInfo.length > 0) {
-      const hasSlot = availabilityInfo.some(u => {
-        const dayStatus = u.availability.find(d => d.date === dateStr);
-        return (dayStatus?.available_count ?? 0) > 0;
-      });
+    let stopStatus = StopStatus.INFO_ONLY;
+    let finalEstimatedCost = 0;
 
-      if (!hasSlot) {
-        throw new BadRequestException(`Địa điểm đã HẾT CHỖ ngày ${dateStr}`);
+    // ================= TÁCH LUỒNG (BIFURCATION) =================
+    if (place.is_partner) {
+      // 🟢 LUỒNG 1: LÀ ĐỐI TÁC -> Bắt buộc check chỗ trống
+      const availabilityInfo = await this.bookingsService.getPlaceAvailability(dto.place_id, dateStr);
+      
+      if (availabilityInfo && availabilityInfo.length > 0) {
+        const hasSlot = availabilityInfo.some(u => {
+          const dayStatus = u.availability.find(d => d.date === dateStr);
+          return (dayStatus?.available_count ?? 0) > 0;
+        });
+
+        if (!hasSlot) {
+          throw new BadRequestException(`Địa điểm đã HẾT CHỖ ngày ${dateStr}`);
+        }
+      }
+      stopStatus = StopStatus.PENDING; 
+      finalEstimatedCost = dto.estimated_cost || 0; // Giá sẽ được chốt lại khi thanh toán thật
+      
+    } else {
+      // 🔵 LUỒNG 2: DỮ LIỆU CÀO TỪ GOOGLE -> Không check kho
+      stopStatus = StopStatus.INFO_ONLY; 
+      
+      if (dto.estimated_cost !== undefined) {
+         // Lấy giá do Frontend gửi lên (giá cào được chính xác)
+         finalEstimatedCost = dto.estimated_cost;
+      } else {
+         // Nếu Frontend không gửi, tự động nội suy từ priceLevel của Google (0-4)
+         // Mức giá giả định (bạn có thể thay đổi số tiền cho phù hợp hệ thống)
+         const priceMap = { 0: 0, 1: 50000, 2: 150000, 3: 500000, 4: 1500000 };
+         finalEstimatedCost = priceMap[place.priceLevel] || 0;
       }
     }
+    // ============================================================
 
     const finalStartTime = dto.start_time || (day.stops.length > 0 && dto.end_time ? JourneyUtils.addMinutesToTime(dto.end_time, -60) : '08:00');
     
@@ -217,22 +248,22 @@ export class JourneysService {
       start_time: finalStartTime,
       end_time: dto.end_time || '09:00',
       note: dto.note,
-      estimated_cost: dto.estimated_cost || 0,
+      estimated_cost: finalEstimatedCost, // Giá đã được xử lý thông minh
       sequence: day.stops.length + 1,
       cost_type: dto.cost_type || CostType.PER_PERSON, 
       transit_from_previous: null,
-      status: StopStatus.PENDING,
+      status: stopStatus, 
     };
     
     day.stops.push(newStop);
 
     await this.schedulerService.recalculateEntireJourney(journey);
-    await this.budgetService.syncSmartBudget(journey);
+    await this.budgetService.syncSmartBudget(journey); // Dù là Google Places, tiền vẫn được cộng dồn vào ngân sách tổng
     await this.journeyRepo.save(journey);
     
     this.userProfileService.scoreAction(userId, dto.place_id, UserActionType.ADD_TO_PLAN);
-
     this.notifyMembers(journey, userId, 'đã thêm địa điểm mới', dto.day_index + 1);
+    
     return journey;
   }
   

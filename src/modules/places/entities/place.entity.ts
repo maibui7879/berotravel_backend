@@ -31,8 +31,8 @@ export class Place {
   @Column('array')
   images: string[];
 
-  @Column()
-  ownerId: string;
+  @Column({ nullable: true })
+  ownerId: string | null;
   
   @Column({ default: 0 })
   rating: number;
@@ -47,6 +47,8 @@ export class Place {
   @Column('array')
   tags: string[];
 
+  @Column({ default: false })
+  is_partner: boolean;
   
   @Column({ type: 'enum', enum: PlaceStatus, default: PlaceStatus.PENDING })
   status: PlaceStatus;
@@ -70,7 +72,6 @@ export class Place {
   @Column({ default: 0 })
   favorites_count: number;
 
-  // [FIX 5] Thay 'simple-array' thành 'array'
   @Column('array', { nullable: true })
   amenities: string[];
 

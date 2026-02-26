@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsArray, ValidateNested } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsArray, ValidateNested, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PlaceCategory } from '../../../common/constants';
 
@@ -58,4 +58,9 @@ export class CreatePlaceDto {
   @ApiProperty({ required: false })
   @IsOptional()
   openingHours?: any;
+
+  @ApiPropertyOptional({ description: 'Xác nhận là chủ sở hữu địa điểm (Dành cho Merchant)' })
+  @IsOptional()
+  @IsBoolean()
+  is_owner?: boolean;
 }

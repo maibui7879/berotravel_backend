@@ -24,7 +24,7 @@ export class AddStopDto {
   note?: string;
 
   // --- [SỬA] Ẩn estimated_cost ---
-  @ApiHideProperty() 
+  @ApiPropertyOptional({ description: 'Chi phí dự kiến (Có thể tự nhập hoặc nếu ko nhập sẽ tự tính)' })
   @IsNumber() 
   @IsOptional() 
   estimated_cost: number;
