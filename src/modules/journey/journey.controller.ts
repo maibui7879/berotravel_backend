@@ -17,6 +17,7 @@ import { AddStopDto } from './dto/add-stop.dto';
 import { CheckInStopDto, ResumeJourneyDto } from './dto/tracking.dto';
 import { CreateJoinRequestDto, ReplyJoinRequestDto } from './dto/social-journey.dto';
 import { JoinJourneyDto, ManageMemberDto } from './dto/member-management.dto';
+import { MoveStopDto } from './dto/move-stop.dto';
 
 interface CurrentUser {
   sub: string;
@@ -59,8 +60,11 @@ export class JourneysController {
   @Public() // Guest có thể xem nếu là Public Journey
   @Get(':id')
   @ApiOperation({ summary: '3. Xem chi tiết hành trình' })
-  findOne(@Param('id') id: string) {
-    return this.journeysService.findOne(id);
+  findOne(
+    @Param('id') id: string,
+    @GetCurrentUser('sub') userId?: string 
+  ) {
+    return this.journeysService.findOne(id, userId);
   }
 
   @Patch(':id')
@@ -82,6 +86,38 @@ export class JourneysController {
   @ApiOperation({ summary: '4. Thêm địa điểm vào lịch trình' })
   addStop(@Param('id') id: string, @Body() dto: AddStopDto, @GetCurrentUser('sub') userId: string) {
     return this.journeysService.addStop(id, dto, userId);
+  }
+
+  @Delete(':id/days/:dayNumber/stops/:stopId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xóa một địa điểm khỏi lịch trình' })
+  removeStop(
+    @Param('id') id: string,
+    @Param('dayNumber') dayNumber: string,
+    @Param('stopId') stopId: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.removeStop(id, parseInt(dayNumber), stopId, userId);
+  }
+
+  @Patch(':id/move-stop')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Kéo thả, thay đổi thứ tự địa điểm' })
+  moveStop(@Param('id') id: string, @Body() dto: MoveStopDto, @GetCurrentUser('sub') userId: string) {
+    dto.journey_id = id; 
+    return this.journeysService.moveStop(userId, dto);
+  }
+  
+  @Get(':id/budget-breakdown')
+  @ApiBearerAuth() 
+  @ApiOperation({ summary: 'Lấy phân tích chi tiết ngân sách (Ăn uống, Khách sạn, Di chuyển)' })
+  async getBudgetBreakdown(
+    @Param('id') journeyId: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    await this.journeysService.findOne(journeyId, userId); 
+
+    return this.costEstimationService.estimateJourneyBudget(journeyId);
   }
 
   @Get(':id/budget')

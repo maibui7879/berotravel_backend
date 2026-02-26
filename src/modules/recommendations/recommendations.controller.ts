@@ -47,30 +47,6 @@ export class RecommendationsController {
   }
 
   /**
-   * POST /recommendations/itinerary/auto-generate
-   * Tạo itinerary tự động dựa trên số ngày, budget, và sở thích
-   */
-  @UseGuards(AtGuard)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'AI Tạo lịch trình tự động (Auto-Itinerary)',
-    description: 'Hệ thống tự động lấp đầy các ngày bằng các địa điểm gợi ý, cân đối thời gian di chuyển và ngân sách.',
-  })
-  @ApiBody({ type: AutoItineraryDto })
-  @ApiResponse({ 
-    status: 201, 
-    description: 'Lịch trình được tạo thành công.', 
-    type: AutoItineraryResponseDto 
-  })
-  @Post('itinerary/auto-generate')
-  async generateAutoItinerary(
-    @GetCurrentUser('sub') userId: string,
-    @Body() input: AutoItineraryDto,
-  ): Promise<AutoItineraryResponseDto> {
-    return this.itineraryGenerator.generateAutoItinerary(userId, input);
-  }
-
-  /**
    * GET /recommendations/stats
    * Lấy stats về recommendations (optional dashboard info)
    */

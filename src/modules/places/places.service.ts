@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
@@ -29,32 +29,46 @@ export class PlacesService {
   // ==========================================
   // 1. CREATE LOGIC
   // ==========================================
-  async create(dto: CreatePlaceDto, user: CurrentUser) {
+async create(dto: CreatePlaceDto, user: any) {
     const { location, ...rest } = dto;
     
-    // Logic Status: Admin/Merchant tạo thì duyệt luôn, User tạo thì chờ duyệt
     const initialStatus = (user.role === Role.ADMIN || user.role === Role.MERCHANT) 
         ? PlaceStatus.APPROVED 
         : PlaceStatus.PENDING;
 
-    const place = this.placeRepo.create({
-      ...rest,
-      location: { type: 'Point', coordinates: [location.lng, location.lat] },
-      ownerId: user.sub,
-      createdBy: user.sub,
-      status: initialStatus,
-    });
+    try {
+      const place = this.placeRepo.create({
+        ...rest,
+        location: {
+          type: 'Point',
+          coordinates: [Number(location.lng), Number(location.lat)],
+        },
+        images: dto.images || [],
+        tags: dto.tags || [],
+        amenities: dto.amenities || [],
+        openingHours: dto.openingHours || null,
+        ownerId: user.sub,
+        createdBy: user.sub,
+        status: initialStatus,
+      });
+      const savedPlace = await this.placeRepo.save(place);
 
-    return await this.placeRepo.save(place);
+      return {
+        message: savedPlace.status === PlaceStatus.PENDING 
+        ? "Địa điểm đang chờ duyệt" 
+        : "Địa điểm đã được phê duyệt tự động",
+        ...savedPlace,
+      };
+      } catch (error) {
+      throw new InternalServerErrorException("Lỗi server khi lưu địa điểm");
+    }
   }
 
   // ==========================================
   // 2. READ LOGIC (SEARCH ENGINE UPDATE)
   // ==========================================
   async findAll(query: SearchPlaceDto, userId?: string) {
-    const { name, category, page = 1, limit = 10, lat, lng, radius, sortBy, sortOrder } = query;
-
-    // Tracking User Search Intent (để tính Travel DNA)
+    const { name, category, tags, page = 1, limit = 10, lat, lng, radius, sortBy, sortOrder } = query;
     if (userId && name) {
         this.userProfileService.trackUserSearch(userId, name);
     }
@@ -66,22 +80,23 @@ export class PlacesService {
     const pipeline: any[] = [];
 
     // 1. GeoNear (Luôn phải đứng đầu pipeline nếu có)
-    if (lat !== undefined && lng !== undefined) {
-      pipeline.push({
-        $geoNear: {
-          near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
-          distanceField: 'distance',
-          maxDistance: Number(radius) || 10000,
-          query: { status: PlaceStatus.APPROVED }, 
-          spherical: true,
-        },
-      });
-    } else {
-      pipeline.push({ $match: { status: PlaceStatus.APPROVED } }); 
-      if (sortField === SortBy.DISTANCE) {
-        throw new BadRequestException('Phải có lat/lng để sắp xếp theo khoảng cách');
-      }
+if (lat !== undefined && lng !== undefined) {
+    pipeline.push({
+      $geoNear: {
+        near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
+        distanceField: 'distance',
+        key: 'location',
+        maxDistance: Number(radius) || 10000,
+        query: { status: PlaceStatus.APPROVED },
+        spherical: true,
+      },
+    });
+  } else {
+    pipeline.push({ $match: { status: PlaceStatus.APPROVED } });
+    if (sortField === SortBy.DISTANCE) {
+      throw new BadRequestException('Phải có lat/lng để sắp xếp theo khoảng cách');
     }
+  }
 
     // 2. Filter Logic (Updated for Tags)
     if (name) {
@@ -98,6 +113,18 @@ export class PlacesService {
                 ]
             } 
         });
+    }
+
+    if (tags) {
+      // Tách chuỗi "wifi,chill" thành mảng và tạo Regex không phân biệt hoa thường
+      const tagList = tags.split(',').map(tag => new RegExp(tag.trim(), 'i'));
+      
+      pipeline.push({ 
+        $match: { 
+
+          tags: { $in: tagList } 
+        } 
+      });
     }
 
     if (category) {
@@ -120,13 +147,16 @@ export class PlacesService {
     });
 
     const result = await this.placeRepo.aggregate(pipeline).toArray();
+
     const data = result[0]?.data || [];
-    const total = result[0]?.totalCount[0]?.count || 0;
+    const total = result[0]?.totalCount?.[0]?.count || 0;
 
     return {
       data,
       meta: { total, limit, page: Number(page), last_page: Math.ceil(total / take) },
     };
+    } catch (error) {
+    throw new InternalServerErrorException('Lỗi database khi tìm kiếm địa điểm');
   }
 
   async findOne(id: string, userId?: string) {

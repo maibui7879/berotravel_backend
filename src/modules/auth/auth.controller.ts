@@ -7,7 +7,8 @@ import {
   HttpCode, 
   HttpStatus, 
   Req,
-  Res
+  Res,
+  Query
 } from '@nestjs/common';
 import { 
   ApiTags, 
@@ -92,6 +93,23 @@ export class AuthController {
     return this.authService.logout(userId);
   }
 
+  @Public()
+  @Get('success')
+  @ApiOperation({ summary: 'Trang hiển thị token sau khi login thành công (Dùng để test)' })
+  handleSuccess(
+    @Query('access_token') accessToken: string,
+    @Query('refresh_token') refreshToken: string,
+  ) {
+    // Trả về một object JSON để bạn có thể nhìn thấy token trên trình duyệt
+    return {
+      message: 'Đăng nhập thành công!',
+      data: {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      },
+    };
+  }
+  
   @Public()
   @UseGuards(RtGuard)
   @Post('refresh')

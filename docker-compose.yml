@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # 1. Ứng dụng NestJS của bạn (Backend)
+  backend:
+    build: .
+    container_name: berotravel_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000" 
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    networks:
+      - berotravel_net
+
+  # 2. Database Redis (Bắt buộc phải có vì Cloud của bạn không có sẵn Redis)
+  redis:
+    image: redis:alpine
+    container_name: berotravel_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data 
+    networks:
+      - berotravel_net
+
+volumes:
+  redis_data:
+
+networks:
+  berotravel_net:
+    driver: bridge

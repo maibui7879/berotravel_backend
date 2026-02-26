@@ -24,6 +24,11 @@ export class SearchPlaceDto {
   @IsOptional() @IsEnum(PlaceCategory) 
   category?: PlaceCategory;
 
+  @ApiPropertyOptional({ description: 'Tìm theo tags, phân cách bằng dấu phẩy (vd: wifi,chill)' }) 
+  @IsOptional() 
+  @IsString() 
+  tags?: string;
+
   @ApiPropertyOptional({ default: 1 }) 
   @IsOptional() @Type(() => Number) 
   @Min(1) 

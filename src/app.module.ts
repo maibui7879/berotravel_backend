@@ -16,7 +16,6 @@ import { FriendModule } from './modules/friend/friend.module';
 import { RecommendationsModule } from './modules/recommendations/recommendations.module';
 import { EmailModule } from './modules/email/email.module';
 import { PaymentsModule } from './modules/payments/payments.module';
-import { CacheModule } from './common/cache/cache.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { HttpLoggerMiddleware } from './common/logger/http-logger.middleware';
@@ -43,7 +42,6 @@ import { HttpLoggerMiddleware } from './common/logger/http-logger.middleware';
         logging: true,
       }),
     }),
-    CacheModule,
     LoggerModule,
     UsersModule,
     AuthModule,

@@ -87,8 +87,8 @@ export class JourneysService {
     return savedJourney;
   }
 
-  async findOne(id: string): Promise<Journey> {
-    return this.accessService.getJourneyWithAccess(id, '', 'VIEW');
+  async findOne(id: string, userId?: string): Promise<Journey> {
+    return this.accessService.getJourneyWithAccess(id, userId || '', 'VIEW');
   }
 
   async findMyJourneys(userId: string): Promise<Journey[]> {

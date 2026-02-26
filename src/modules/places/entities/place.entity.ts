@@ -10,6 +10,7 @@ export class Place {
   @Column()
   name: string;
 
+
   @Column()
   description: string;
 
@@ -19,15 +20,15 @@ export class Place {
   @Column()
   address: string;
 
-  // Cấu trúc GeoJSON chuẩn cho MongoDB
   @Index('2dsphere')
-  @Column('json')
+  @Column('object')
   location: {
     type: string; // "Point"
     coordinates: number[]; // [lng, lat]
   };
 
-  @Column('simple-array')
+
+  @Column('array')
   images: string[];
 
   @Column()
@@ -42,19 +43,21 @@ export class Place {
   @Column({ nullable: true })
   priceLevel: number; 
 
-  @Column('simple-array')
+  // [FIX 3] Thay 'simple-array' thành 'array'
+  @Column('array')
   tags: string[];
 
   @Column({ type: 'enum', enum: PlaceStatus, default: PlaceStatus.PENDING })
   status: PlaceStatus;
 
+  // [FIX 4] Thay 'json' thành 'object'
   @Column('json', { nullable: true })
   openingHours: {
     periods: {
-      open: { day: number; time: string }; // 0 (CN) -> 6 (T7), "0800"
+      open: { day: number; time: string }; 
       close: { day: number; time: string };
     }[];
-    weekday_text: string[]; // "Thứ Hai: 08:00 – 22:00"
+    weekday_text: string[]; 
   };
 
   @Column({ nullable: true })
@@ -66,7 +69,8 @@ export class Place {
   @Column({ default: 0 })
   favorites_count: number;
 
-  @Column('simple-array', { nullable: true })
+  // [FIX 5] Thay 'simple-array' thành 'array'
+  @Column('array', { nullable: true })
   amenities: string[];
 
   @Column()
