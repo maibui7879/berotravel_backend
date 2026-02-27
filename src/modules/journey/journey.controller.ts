@@ -57,13 +57,14 @@ export class JourneysController {
     return this.journeysService.create(dto, userId);
   }
 
-  @Public() // Guest có thể xem nếu là Public Journey
   @Get(':id')
-  @ApiOperation({ summary: '3. Xem chi tiết hành trình' })
+  @Public() 
+  @ApiOperation({ summary: '3. Xem chi tiết hành trình (Hỗ trợ View-only cho bạn bè)' })
   findOne(
     @Param('id') id: string,
-    @GetCurrentUser('sub') userId?: string 
+    @GetCurrentUser('sub') userId?: string // userId có thể undefined nếu là khách
   ) {
+    // Truyền userId vào service để kiểm tra quyền View-only
     return this.journeysService.findOne(id, userId);
   }
 

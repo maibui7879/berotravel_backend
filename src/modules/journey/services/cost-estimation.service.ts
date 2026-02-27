@@ -144,7 +144,14 @@ export class CostEstimationService {
         const place = placeMap.get(stop.place_id);
 
         if (!place) continue;
+        if (stop.is_prepaid) {
+        continue; 
+      }
 
+      if (includeAccommodation && (place.category === 'HOTEL')) {
+        const accCost = await this.calculateAccommodationCost(stop.place_id, journey.start_date, journey.end_date);
+        if (accCost) accommodationCosts.push(accCost);
+      }
         // B. Calculate Accommodation (Booking System)
         // Lưu ý: Phần này dựa trên Booking System nên ưu tiên logic hệ thống.
         // Nếu user muốn nhập tay tiền khách sạn, họ nên thêm nó như một Activity với manual cost.

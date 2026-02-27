@@ -10,7 +10,11 @@ export class SendFriendRequestDto {
 }
 
 export class RespondFriendRequestDto {
-  @ApiProperty({ enum: [FriendStatus.ACCEPTED, FriendStatus.BLOCKED] })
-  @IsEnum(FriendStatus)
-  status: FriendStatus.ACCEPTED | FriendStatus.BLOCKED;
+  @ApiProperty({ 
+    enum: [FriendStatus.ACCEPTED, FriendStatus.REJECTED],
+    description: 'Chấp nhận (ACCEPTED) hoặc Từ chối (REJECTED) lời mời kết bạn',
+    example: FriendStatus.ACCEPTED 
+  })
+  @IsEnum({ ACCEPTED: FriendStatus.ACCEPTED, REJECTED: FriendStatus.REJECTED })
+  status: FriendStatus.ACCEPTED | FriendStatus.REJECTED;
 }

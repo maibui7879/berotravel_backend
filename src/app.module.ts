@@ -19,6 +19,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { HttpLoggerMiddleware } from './common/logger/http-logger.middleware';
+import { ForumModule } from './modules/forum/forum.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { HttpLoggerMiddleware } from './common/logger/http-logger.middleware';
     EmailModule,
     PaymentsModule,
     AdminModule,
+    ForumModule,
   ],
 })
 export class AppModule implements NestModule {

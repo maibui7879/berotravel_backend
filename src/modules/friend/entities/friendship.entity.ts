@@ -4,7 +4,8 @@ import { ObjectId } from 'mongodb';
 export enum FriendStatus {
   PENDING = 'PENDING',   // Đã gửi lời mời
   ACCEPTED = 'ACCEPTED', // Đã là bạn
-  BLOCKED = 'BLOCKED'    // Chặn (Optional)
+  BLOCKED = 'BLOCKED' ,   // Chặn (Optional)
+  REJECTED = 'REJECTED'  // Từ chối (Optional)
 }
 
 @Entity('friendships')

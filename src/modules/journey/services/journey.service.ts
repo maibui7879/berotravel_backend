@@ -88,7 +88,15 @@ export class JourneysService {
   }
 
   async findOne(id: string, userId?: string): Promise<Journey> {
-    return this.accessService.getJourneyWithAccess(id, userId || '', 'VIEW');
+    // Lấy hành trình thông qua accessService để kiểm tra quyền VIEW/EDIT
+    const journey = await this.accessService.getJourneyWithAccess(id, userId || '', 'VIEW');
+
+    // Logic bảo mật: Chỉ Owner mới thấy invite_code
+    if (journey.owner_id !== userId) {
+      delete journey.invite_code;
+    }
+
+    return journey;
   }
 
   async findMyJourneys(userId: string): Promise<Journey[]> {
@@ -188,27 +196,33 @@ export class JourneysService {
 
   // Complex Logic (Stops)
 async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
+    // 1. Kiểm tra quyền truy cập (phải có quyền EDIT)
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     
-    if (!ObjectId.isValid(dto.place_id)) throw new BadRequestException('Place ID không hợp lệ');
+    if (!ObjectId.isValid(dto.place_id)) {
+        throw new BadRequestException('Place ID không hợp lệ');
+    }
     
-    // [SỬA] Query thêm is_partner và priceLevel để phục vụ rẽ nhánh
+    // 2. Lấy thông tin địa điểm để phân luồng (Partner vs Google Maps)
     const place = await this.placeRepo.findOne({ 
       where: { _id: new ObjectId(dto.place_id) }, 
-      select: ['_id', 'is_partner', 'priceLevel'] as any 
+      select: ['_id', 'name', 'is_partner', 'priceLevel', 'category'] as any 
     });
     
-    if (!place) throw new NotFoundException('Địa điểm không tồn tại');
+    if (!place) {
+        throw new NotFoundException('Địa điểm không tồn tại');
+    }
     
     const day = journey.days[dto.day_index];
     const dateStr = new Date(day.date).toISOString().split('T')[0];
+    const currentMemberIds = journey.members?.map(m => m.user_id) || [];
     
     let stopStatus = StopStatus.INFO_ONLY;
     let finalEstimatedCost = 0;
 
-    // ================= TÁCH LUỒNG (BIFURCATION) =================
+    // 3. TÁCH LUỒNG XỬ LÝ (Partner vs Google Places)
     if (place.is_partner) {
-      // 🟢 LUỒNG 1: LÀ ĐỐI TÁC -> Bắt buộc check chỗ trống
+      // LUỒNG 1: LÀ ĐỐI TÁC -> Kiểm tra chỗ trống thực tế
       const availabilityInfo = await this.bookingsService.getPlaceAvailability(dto.place_id, dateStr);
       
       if (availabilityInfo && availabilityInfo.length > 0) {
@@ -221,47 +235,68 @@ async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journ
           throw new BadRequestException(`Địa điểm đã HẾT CHỖ ngày ${dateStr}`);
         }
       }
-      stopStatus = StopStatus.PENDING; 
-      finalEstimatedCost = dto.estimated_cost || 0; // Giá sẽ được chốt lại khi thanh toán thật
+      stopStatus = StopStatus.PENDING;
+      finalEstimatedCost = dto.estimated_cost || 0; 
       
     } else {
-      // 🔵 LUỒNG 2: DỮ LIỆU CÀO TỪ GOOGLE -> Không check kho
-      stopStatus = StopStatus.INFO_ONLY; 
+      // LUỒNG 2: DỮ LIỆU GOOGLE -> Nội suy giá từ priceLevel nếu không nhập
+      stopStatus = StopStatus.INFO_ONLY;
       
       if (dto.estimated_cost !== undefined) {
-         // Lấy giá do Frontend gửi lên (giá cào được chính xác)
          finalEstimatedCost = dto.estimated_cost;
       } else {
-         // Nếu Frontend không gửi, tự động nội suy từ priceLevel của Google (0-4)
-         // Mức giá giả định (bạn có thể thay đổi số tiền cho phù hợp hệ thống)
          const priceMap = { 0: 0, 1: 50000, 2: 150000, 3: 500000, 4: 1500000 };
          finalEstimatedCost = priceMap[place.priceLevel] || 0;
       }
     }
-    // ============================================================
 
-    const finalStartTime = dto.start_time || (day.stops.length > 0 && dto.end_time ? JourneyUtils.addMinutesToTime(dto.end_time, -60) : '08:00');
+    // 4. Xử lý thời gian bắt đầu mặc định
+    const finalStartTime = dto.start_time || 
+      (day.stops.length > 0 && dto.end_time 
+        ? JourneyUtils.addMinutesToTime(dto.end_time, -60) 
+        : '08:00');
     
+    // 5. Khởi tạo Stop mới với tính năng Custom Budget & Prepaid
     const newStop: JourneyStop = {
       _id: new ObjectId().toString(),
       place_id: dto.place_id,
       start_time: finalStartTime,
       end_time: dto.end_time || '09:00',
       note: dto.note,
-      estimated_cost: finalEstimatedCost, // Giá đã được xử lý thông minh
+      estimated_cost: finalEstimatedCost,
       sequence: day.stops.length + 1,
-      cost_type: dto.cost_type || CostType.PER_PERSON, 
+      cost_type: dto.cost_type || CostType.PER_PERSON,
       transit_from_previous: null,
-      status: stopStatus, 
+      status: stopStatus,
+      
+      // [NEW] Logic chia tiền tùy chỉnh và bao phòng
+      is_prepaid: dto.is_prepaid || false,
+      payer_id: dto.is_prepaid ? (dto.payer_id || userId) : undefined,
+      
+      // Nếu bao phòng thì mặc định không ai phải trả tiền. 
+      // Nếu không bao phòng, sử dụng danh sách truyền lên hoặc mặc định cả nhóm.
+      participant_ids: dto.is_prepaid 
+        ? [] 
+        : (dto.participant_ids && dto.participant_ids.length > 0 
+            ? dto.participant_ids 
+            : [...currentMemberIds])
     };
     
+    // 6. Lưu trữ và cập nhật hệ thống
     day.stops.push(newStop);
 
+    // Tính toán lại lộ trình và thời gian di chuyển
     await this.schedulerService.recalculateEntireJourney(journey);
-    await this.budgetService.syncSmartBudget(journey); // Dù là Google Places, tiền vẫn được cộng dồn vào ngân sách tổng
+    
+    // Đồng bộ lại ngân sách thông minh (bao gồm cả Member Balances)
+    await this.budgetService.syncSmartBudget(journey);
+    
     await this.journeyRepo.save(journey);
     
+    // Ghi nhận hành động để cá nhân hóa gợi ý sau này
     this.userProfileService.scoreAction(userId, dto.place_id, UserActionType.ADD_TO_PLAN);
+    
+    // Thông báo cho các thành viên khác trong nhóm
     this.notifyMembers(journey, userId, 'đã thêm địa điểm mới', dto.day_index + 1);
     
     return journey;

@@ -26,13 +26,19 @@ export class FriendsController {
   }
 
   @Patch('requests/:id/respond')
-  @ApiOperation({ summary: 'Chấp nhận / Chặn lời mời' })
+  @ApiOperation({ summary: 'Chấp nhận hoặc Từ chối lời mời' })
   respond(
     @Param('id') id: string, 
-    @Body() dto: RespondFriendRequestDto, 
+    @Body() dto: RespondFriendRequestDto, // DTO này nên validate status chỉ là ACCEPTED hoặc REJECTED
     @GetCurrentUser('sub') userId: string
   ) {
     return this.friendsService.respondRequest(userId, id, dto.status);
+  }
+
+  @Post('block/:targetId')
+  @ApiOperation({ summary: 'Chặn người dùng' })
+  block(@Param('targetId') targetId: string, @GetCurrentUser('sub') userId: string) {
+    return this.friendsService.blockUser(userId, targetId);
   }
 
   @Delete(':targetId')
@@ -45,5 +51,11 @@ export class FriendsController {
   @ApiOperation({ summary: 'Lấy danh sách bạn bè' })
   getMyFriends(@GetCurrentUser('sub') userId: string) {
     return this.friendsService.getMyFriends(userId);
+  }
+
+  @Delete('unblock/:targetId')
+  @ApiOperation({ summary: 'Gỡ chặn người dùng' })
+  unblock(@Param('targetId') targetId: string, @GetCurrentUser('sub') userId: string) {
+    return this.friendsService.unblock(userId, targetId);
   }
 }

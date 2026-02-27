@@ -7,7 +7,7 @@ import { JourneysController } from './journey.controller';
 // Main Services
 import { JourneysService } from './services/journey.service';
 import { CostEstimationService } from './services/cost-estimation.service';
-
+import { FriendModule } from '../friend/friend.module';
 // [FIX 1] Import các Sub-Services mới tách ra
 import { JourneyAccessService } from './services/journey-access.service';
 import { JourneySchedulerService } from './services/journey-scheduler.service';
@@ -27,7 +27,7 @@ import { JourneyTrackingService } from './services/journey-tracking.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Journey, Place, InventoryUnit, Availability]),
-    
+    forwardRef(() => FriendModule),
     UsersModule,
     NotificationsModule,
     BookingsModule 

@@ -55,4 +55,20 @@ export class AddStopDto {
   @IsOptional()
   @IsNumber()
   transit_distance_km?: number;
+
+  @ApiPropertyOptional({ description: 'Danh sách ID thành viên tham gia' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  participant_ids?: string[];
+  
+@ApiPropertyOptional({ description: 'Đánh dấu nếu điểm này đã được thanh toán trước' })
+  @IsOptional()
+  @IsBoolean()
+  is_prepaid?: boolean; //
+
+  @ApiPropertyOptional({ description: 'ID người đã thanh toán trước (mặc định là người thêm stop)' })
+  @IsOptional()
+  @IsString()
+  payer_id?: string; //
 }

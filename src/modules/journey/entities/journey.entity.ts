@@ -43,8 +43,15 @@ export enum StopStatus {
 }
 
 export enum JourneyVisibility {
-  PRIVATE = 'PRIVATE', // Chỉ thành viên mới thấy
+  PRIVATE = 'PRIVATE',
+  FRIENDS = 'FRIENDS', // Chỉ thành viên mới thấy
   PUBLIC = 'PUBLIC'    // Ai cũng thấy, ai cũng có thể Request Join
+}
+
+export interface MemberBalance {
+  user_id: string;
+  total_spent: number;    // Tiền đã chi thực tế (Stop Status: ARRIVED)
+  total_estimated: number; // Tiền dự kiến cho tương lai (Stop Status: PENDING)
 }
 
 export interface JourneyStop {
@@ -59,12 +66,14 @@ export interface JourneyStop {
   cost_type?: CostType;
   transit_from_previous?: TransitInfo | null;
   is_manual_transit?: boolean;
-  
+  participant_ids?: string[];
   // [NEW] Tracking Fields
   status: StopStatus;
   actual_arrival_time?: Date | null;
   actual_cost?: number;
   check_in_image?: string | null;
+  is_prepaid?: boolean; 
+  payer_id?: string;    
 }
 
 export interface JourneyDay {
@@ -81,7 +90,8 @@ export interface BudgetBreakdown {
   total_personal: number;        // Tổng chi phí riêng
   grand_total_per_person: number;// Tổng cộng 1 người
   is_over_budget: boolean;       // Cờ cảnh báo
-  over_amount: number;           // Số tiền vượt
+  over_amount: number;   
+  member_balances: MemberBalance[];        // Số tiền vượt
 }
 
 // [NEW] Enum cho trạng thái Journey
