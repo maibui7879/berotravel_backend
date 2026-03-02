@@ -76,7 +76,7 @@ export class JourneyTrackingService {
     stop.status = StopStatus.ARRIVED;
     stop.actual_arrival_time = new Date();
     
-    if (dto.actual_cost !== undefined) {
+    if (dto.actual_cost !== undefined && !stop.is_prepaid) {
         let finalCostPerPerson = dto.actual_cost;
         if (dto.is_total_bill) {
              // Chia cho số người thực tế tham gia địa điểm này thay vì cả đoàn

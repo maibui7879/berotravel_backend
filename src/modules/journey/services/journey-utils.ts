@@ -1,5 +1,4 @@
 export class JourneyUtils {
-  // Config tốc độ
   static readonly TRANSIT_CONFIG = {
     DRIVING: { speed: 35, buffer: 15 },
     WALKING: { speed: 5, buffer: 0 },
@@ -13,7 +12,7 @@ export class JourneyUtils {
   }
 
   static getHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371; // Bán kính trái đất (km)
+    const R = 6371; 
     const dLat = this.toRad(lat2 - lat1);
     const dLon = this.toRad(lon2 - lon1);
     const a =
@@ -23,19 +22,30 @@ export class JourneyUtils {
     return Number((R * c).toFixed(1));
   }
 
-  static addMinutesToTime(time: string | null | undefined, mins: number): string {
-    const safeTime = time || '08:00';
+  // [SỬA] Chuyển HH:mm thành phút
+  static timeToMinutes(time: string | null | undefined): number {
+    const safeTime = time || '00:00'; 
     const [h, m] = safeTime.split(':').map(Number);
-    const date = new Date();
-    date.setHours(h, m + mins, 0, 0);
-    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    return h * 60 + m;
   }
 
-  static compareTime(t1: string | null, t2: string | null): number {
-    const time1 = t1 || '00:00';
-    const time2 = t2 || '00:00';
-    const [h1, m1] = time1.split(':').map(Number);
-    const [h2, m2] = time2.split(':').map(Number);
-    return h1 * 60 + m1 - (h2 * 60 + m2);
+  // [SỬA] Hỗ trợ cộng phút xuyên ngày (24h)
+  static addMinutesToTime(time: string | null | undefined, mins: number): string {
+    const totalMinutes = this.timeToMinutes(time || '08:00') + mins;
+    const h = Math.floor((totalMinutes / 60) % 24);
+    const m = Math.floor(totalMinutes % 60);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  }
+
+  // [MỚI] Tính duration hỗ trợ xuyên đêm (Start: 22:00, End: 02:00 => 240 mins)
+  static getDurationMinutes(startTime: string, endTime: string): number {
+    const start = this.timeToMinutes(startTime);
+    let end = this.timeToMinutes(endTime);
+    if (end < start) end += 1440; // Cộng 24h
+    return end - start;
+  }
+
+  static compareTime(t1: string | null | undefined, t2: string | null | undefined): number {
+    return this.timeToMinutes(t1) - this.timeToMinutes(t2);
   }
 }

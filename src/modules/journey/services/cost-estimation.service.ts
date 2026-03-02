@@ -1,3 +1,5 @@
+// src/modules/journey/services/cost-estimation.service.ts
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
@@ -12,7 +14,6 @@ import { Place } from '../../places/entities/place.entity';
 // ============================================================================
 // CONFIGURATION & CONSTANTS
 // ============================================================================
-
 export const COST_RATES = {
   transportation: {
     DRIVING: 3000,          // VND/km (Xăng xe - Chia sẻ)
@@ -33,10 +34,6 @@ export const COST_RATES = {
     ADVENTURE: 800000,
   },
 };
-
-// ============================================================================
-// INTERFACES
-// ============================================================================
 
 export interface AccommodationCost {
   unit_id: string;
@@ -130,12 +127,15 @@ export class CostEstimationService {
     const activityCosts: ActivityCost[] = [];
     const transportationCosts: TransportationCost[] = [];
 
+    // Mảng gom các khách sạn để tính toán số đêm cho chuẩn
+    const hotelStops: { place_id: string; date: Date; is_prepaid: boolean; explicit_checkout_date?: Date }[] = [];
+
     // --- MAIN LOOP ---
     for (let i = 0; i < journey.days.length; i++) {
       const day = journey.days[i];
       const dayNum = i + 1;
 
-      // A. Calculate Dining (Per Day) - Đã cập nhật logic Manual
+      // A. Calculate Dining (Per Day)
       const dayDining = this.calculateDiningCost(day, dayNum, placeMap);
       if (dayDining.subtotal > 0) diningCosts.push(dayDining);
 
@@ -144,59 +144,58 @@ export class CostEstimationService {
         const place = placeMap.get(stop.place_id);
 
         if (!place) continue;
-        if (stop.is_prepaid) {
-        continue; 
-      }
 
-      if (includeAccommodation && (place.category === 'HOTEL')) {
-        const accCost = await this.calculateAccommodationCost(stop.place_id, journey.start_date, journey.end_date);
-        if (accCost) accommodationCosts.push(accCost);
-      }
-        // B. Calculate Accommodation (Booking System)
-        // Lưu ý: Phần này dựa trên Booking System nên ưu tiên logic hệ thống.
-        // Nếu user muốn nhập tay tiền khách sạn, họ nên thêm nó như một Activity với manual cost.
-        if (includeAccommodation && (place.category === 'HOTEL')) {
-          const accCost = await this.calculateAccommodationCost(stop.place_id, journey.start_date, journey.end_date);
-          if (accCost) accommodationCosts.push(accCost);
-        }
-
-        // C. Calculate Activities (Vui chơi / Tham quan)
-        // Logic: Áp dụng cho những nơi KHÔNG PHẢI là chỗ ăn, chỗ ở (đã tính ở trên)
-        // HOẶC nếu người dùng nhập tay (is_manual_cost) thì tính hết
-        const isDiningPlace = ['RESTAURANT', 'CAFE', 'STREET_FOOD'].includes(place.category);
         const isAccommodation = ['HOTEL', 'HOMESTAY'].includes(place.category);
+        const isDiningPlace = ['RESTAURANT', 'CAFE', 'STREET_FOOD'].includes(place.category);
 
-        // Nếu là địa điểm vui chơi HOẶC địa điểm ăn uống/ngủ nghỉ nhưng user muốn nhập chi phí phụ (vé vào cửa, tip...)
-        if (!isDiningPlace && !isAccommodation || stop.is_manual_cost) {
-          
-          let finalCost = 0;
+        // B. Gom danh sách Khách sạn để xử lý sau (chống duplicate check-in)
+        // [ĐÃ VÁ LỖI]: Không đẩy vào mảng tiền đêm nếu là thuê day-use tự nhập giá
+        if (includeAccommodation && isAccommodation && !stop.is_manual_cost && !stop.is_prepaid) {
+            const lastHotel = hotelStops.length > 0 ? hotelStops[hotelStops.length - 1] : null;
 
-          // [LOGIC MỚI] Kiểm tra cờ Manual
-          if (stop.is_manual_cost) {
-             // 1. Nếu nhập tay -> Dùng giá user
-             finalCost = stop.estimated_cost;
+          // Nếu Stop này trùng với Khách sạn ngay trước đó (User add lại vào ngày hôm sau để checkout)
+          if (lastHotel && lastHotel.place_id === stop.place_id) {
+            // Không tạo lần Check-in mới, mà lấy ngày này làm mốc Check-out cho lần trước
+            lastHotel.explicit_checkout_date = day.date;
           } else {
-             // 2. Nếu tự động -> Tra bảng giá mặc định
-             finalCost = this.getDefaultActivityCost(place.category);
-          }
-
-          // Chỉ thêm vào nếu cost > 0 để tránh rác data
-          if (finalCost > 0) {
-            activityCosts.push({
-              day_number: dayNum,
-              sequence: j + 1,
-              place_name: place.name,
-              place_category: place.category,
-              estimated_cost: finalCost,
+            // Khách sạn mới hoàn toàn -> Tạo lần Check-in mới
+            hotelStops.push({
+              place_id: stop.place_id,
+              date: day.date,
+              is_prepaid: stop.is_prepaid || false
             });
           }
         }
 
-        // D. Calculate Transportation (Within Day)
+        // C. Calculate Activities
+        if (!stop.is_prepaid) {
+          // Tính phí hoạt động NẾU không phải chỗ ngủ/chỗ ăn, HOẶC nếu user cố tình tự nhập giá (Day-use / Vé dịch vụ)
+          if (!(isDiningPlace || isAccommodation) || stop.is_manual_cost) {
+            let finalCost = 0;
+
+            if (stop.is_manual_cost) {
+               finalCost = stop.estimated_cost;
+            } else {
+               finalCost = this.getDefaultActivityCost(place.category);
+            }
+
+            if (finalCost > 0) {
+              activityCosts.push({
+                day_number: dayNum,
+                sequence: j + 1,
+                place_name: place.name,
+                place_category: place.category,
+                estimated_cost: finalCost,
+              });
+            }
+          }
+        }
+
+        // D. Calculate Transportation (Luôn tính phí di chuyển, dù điểm đó có Prepaid hay không)
         if (stop.transit_from_previous) {
           const mode = stop.transit_from_previous.mode;
           const dist = stop.transit_from_previous.distance_km;
-          const rate = COST_RATES.transportation[mode] || 0;
+          const rate = (COST_RATES.transportation as any)[mode] || 0;
           
           const isShared = mode === 'DRIVING'; 
           const baseCost = dist * rate;
@@ -213,6 +212,40 @@ export class CostEstimationService {
           });
         }
       }
+    }
+
+    // --- XỬ LÝ SỐ ĐÊM KHÁCH SẠN (HOTEL NIGHTS) ---
+    for (let k = 0; k < hotelStops.length; k++) {
+        const currentHotel = hotelStops[k];
+        
+        // Nếu đã thanh toán trước (Bao phòng) thì bỏ qua không tính vào bill chung
+        if (currentHotel.is_prepaid) continue;
+
+        const checkIn = new Date(currentHotel.date);
+        checkIn.setHours(0, 0, 0, 0);
+
+        // Ưu tiên 1: Lấy ngày Check-out do người dùng tự ghim (nếu có)
+        // Ưu tiên 2: Lấy ngày kết thúc hành trình
+        let checkOut = currentHotel.explicit_checkout_date 
+                       ? new Date(currentHotel.explicit_checkout_date) 
+                       : new Date(journey.end_date);
+        checkOut.setHours(0, 0, 0, 0);
+
+        // Ưu tiên 3: Nếu không có ngày tự ghim, mà có khách sạn mới tiếp theo thì bị đè ngày check-out
+        if (!currentHotel.explicit_checkout_date && k + 1 < hotelStops.length) {
+            const nextHotelDate = new Date(hotelStops[k + 1].date);
+            nextHotelDate.setHours(0, 0, 0, 0);
+            checkOut = nextHotelDate;
+        }
+
+        // Đảm bảo thuê tối thiểu 1 đêm (nếu user chèn 2 khách sạn trong cùng 1 ngày do nhầm lẫn)
+        if (checkOut.getTime() <= checkIn.getTime()) {
+            checkOut = new Date(checkIn);
+            checkOut.setDate(checkOut.getDate() + 1);
+        }
+
+        const accCost = await this.calculateAccommodationCost(currentHotel.place_id, checkIn, checkOut);
+        if (accCost) accommodationCosts.push(accCost);
     }
 
     // --- SUMMARY CALCULATION ---
@@ -234,9 +267,8 @@ export class CostEstimationService {
   }
 
   // =================================================================
-  // HELPERS
+  // HELPERS 
   // =================================================================
-
   private async calculateAccommodationCost(
     placeId: string,
     checkIn: Date,
@@ -274,17 +306,12 @@ export class CostEstimationService {
     day.stops.forEach(stop => {
       const place = placeMap.get(stop.place_id);
       
-      // Chỉ tính nếu là nơi ăn uống
       if (place && ['RESTAURANT', 'CAFE', 'STREET_FOOD'].includes(place.category)) {
-        
-        // [LOGIC MỚI] Check Manual Cost
         let estimate = 0;
         
         if (stop.is_manual_cost) {
-            // Trường hợp 1: User nhập tay
             estimate = stop.estimated_cost;
         } else {
-            // Trường hợp 2: Tự động tính theo giờ
             const hour = parseInt((stop.start_time || '12:00').split(':')[0]);
             const cat = place.category as keyof typeof COST_RATES.dining;
             
@@ -295,7 +322,6 @@ export class CostEstimationService {
             estimate = COST_RATES.dining[cat]?.[mealType] || 100000;
         }
 
-        // Logic phân loại để hiển thị (chỉ mang tính chất grouping)
         const hour = parseInt((stop.start_time || '12:00').split(':')[0]);
         if (hour < 11) {
             cost.breakfast = { place: place.name, estimated_cost: estimate };
@@ -320,18 +346,11 @@ export class CostEstimationService {
     members: number
   ): CostSummary {
     const totalAcc = acc.reduce((s, i) => s + i.subtotal, 0);
-
-    // Dining: Nhân số người (Vì mỗi người ăn 1 suất)
     const baseDining = din.reduce((s, i) => s + i.subtotal, 0);
     const totalDining = baseDining * members;
-
-    // Activities: Nhân số người (Vì mỗi người mua 1 vé)
     const baseAct = act.reduce((s, i) => s + i.estimated_cost, 0);
     const totalAct = baseAct * members;
-
-    // Transportation: Không nhân (Vì đã tính toán logic shared/private ở trên)
     const totalTrans = trans.reduce((s, i) => s + i.estimated_cost, 0);
-
     const grandTotal = totalAcc + totalDining + totalAct + totalTrans;
 
     return {

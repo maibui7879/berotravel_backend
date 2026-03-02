@@ -30,7 +30,7 @@ export class JourneyBudgetService {
           // Nếu đã bao phòng (prepaid), chi phí đối với những người khác là 0
           if (stop.is_prepaid) return;
 
-          const cost = stop.actual_cost || stop.estimated_cost || 0;
+          const cost = stop.actual_cost !== undefined ? stop.actual_cost : (stop.estimated_cost || 0);
           if (cost === 0) return;
 
           const participants = stop.participant_ids || [];

@@ -1,3 +1,5 @@
+// src/modules/journey/services/journey.service.ts
+
 import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
@@ -10,8 +12,9 @@ import { UpdateJourneyDto } from '../dto/update-journey.dto';
 import { AddStopDto } from '../dto/add-stop.dto';
 import { MoveStopDto } from '../dto/move-stop.dto';
 import { CreateJoinRequestDto, ReplyJoinRequestDto, ReplyStatus } from '../dto/social-journey.dto';
+import { UpdateStopDto } from '../dto/update-stop.dto';
 import { Role, UserActionType } from 'src/common/constants';
-
+import { JourneyStatus } from '../entities/journey.entity';
 import { NotificationsService } from '../../notification/notification.service';
 import { UsersService } from 'src/modules/users/services/users.service';
 import { UserProfileService } from 'src/modules/users/services/user-profile.service'; 
@@ -53,7 +56,7 @@ export class JourneysService {
     const start = new Date(dto.start_date);
     const end = new Date(dto.end_date);
     if (end < start) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu');
-
+    await this.checkScheduleConflict(userId, start, end);
     const diffDays = Math.ceil(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     const days: JourneyDay[] = Array.from({ length: diffDays }, (_, i) => {
       const date = new Date(start);
@@ -88,14 +91,10 @@ export class JourneysService {
   }
 
   async findOne(id: string, userId?: string): Promise<Journey> {
-    // Lấy hành trình thông qua accessService để kiểm tra quyền VIEW/EDIT
     const journey = await this.accessService.getJourneyWithAccess(id, userId || '', 'VIEW');
-
-    // Logic bảo mật: Chỉ Owner mới thấy invite_code
     if (journey.owner_id !== userId) {
       delete journey.invite_code;
     }
-
     return journey;
   }
 
@@ -126,6 +125,11 @@ export class JourneysService {
     const journey = await this.accessService.getJourneyWithAccess(id, userId, 'EDIT');
     Object.assign(journey, dto);
 
+    if (dto.start_date || dto.end_date) {
+        const start = dto.start_date ? new Date(dto.start_date) : new Date(journey.start_date);
+        const end = dto.end_date ? new Date(dto.end_date) : new Date(journey.end_date);
+        await this.checkScheduleConflict(userId, start, end, id); 
+    }
     if (dto.planned_members_count !== undefined) {
       await this.budgetService.syncSmartBudget(journey);
     }
@@ -157,21 +161,13 @@ export class JourneysService {
     return { success: true };
   }
   
-  // Social: Public Join Requests [DEPRECATED - Merged into member management]
-  // These functions are kept for backward compatibility but redirected
   async sendJoinRequest(journeyId: string, userId: string, dto: CreateJoinRequestDto) {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
-    
-    if (journey.visibility !== JourneyVisibility.PUBLIC) {
-        throw new BadRequestException('Hành trình này không công khai');
-    }
-
+    if (journey.visibility !== JourneyVisibility.PUBLIC) throw new BadRequestException('Hành trình này không công khai');
     if (journey.owner_id === userId) throw new BadRequestException('Bạn là chủ sở hữu');
 
-    // Use new member management system
     await this.requestJoinJourney(journeyId, userId);
-
     this.notifyMembers(journey, journey.owner_id, `muốn tham gia hành trình: "${dto.message || ''}"`, undefined, userId);
 
     return { success: true, message: 'Đã gửi yêu cầu tham gia' };
@@ -194,54 +190,55 @@ export class JourneysService {
     return { success: true, status: dto.status };
   }
 
-  // Complex Logic (Stops)
-async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
-    // 1. Kiểm tra quyền truy cập (phải có quyền EDIT)
+  // =================================================================
+  // ADD STOP & AUTO-SPLIT LOGIC
+  // =================================================================
+  async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     
     if (!ObjectId.isValid(dto.place_id)) {
         throw new BadRequestException('Place ID không hợp lệ');
     }
     
-    // 2. Lấy thông tin địa điểm để phân luồng (Partner vs Google Maps)
     const place = await this.placeRepo.findOne({ 
       where: { _id: new ObjectId(dto.place_id) }, 
       select: ['_id', 'name', 'is_partner', 'priceLevel', 'category'] as any 
     });
     
-    if (!place) {
-        throw new NotFoundException('Địa điểm không tồn tại');
-    }
+    if (!place) throw new NotFoundException('Địa điểm không tồn tại');
     
     const day = journey.days[dto.day_index];
     const dateStr = new Date(day.date).toISOString().split('T')[0];
     const currentMemberIds = journey.members?.map(m => m.user_id) || [];
     
+    const isAccommodation = ['HOTEL', 'HOMESTAY'].includes(place.category);
+
+    // [NEW] Validate Logic Auto-Split
+    if (dto.checkout_day_index !== undefined || dto.checkout_time) {
+      if (!isAccommodation) {
+        throw new BadRequestException('Tính năng thiết lập ngày/giờ trả phòng chỉ áp dụng cho nơi lưu trú (Khách sạn, Homestay).');
+      }
+      if (dto.checkout_day_index === undefined || !dto.checkout_time) {
+        throw new BadRequestException('Vui lòng cung cấp đầy đủ cả ngày và giờ trả phòng.');
+      }
+    }
+
     let stopStatus = StopStatus.INFO_ONLY;
     let finalEstimatedCost = 0;
 
-    // 3. TÁCH LUỒNG XỬ LÝ (Partner vs Google Places)
     if (place.is_partner) {
-      // LUỒNG 1: LÀ ĐỐI TÁC -> Kiểm tra chỗ trống thực tế
       const availabilityInfo = await this.bookingsService.getPlaceAvailability(dto.place_id, dateStr);
-      
       if (availabilityInfo && availabilityInfo.length > 0) {
         const hasSlot = availabilityInfo.some(u => {
           const dayStatus = u.availability.find(d => d.date === dateStr);
           return (dayStatus?.available_count ?? 0) > 0;
         });
-
-        if (!hasSlot) {
-          throw new BadRequestException(`Địa điểm đã HẾT CHỖ ngày ${dateStr}`);
-        }
+        if (!hasSlot) throw new BadRequestException(`Địa điểm đã HẾT CHỖ ngày ${dateStr}`);
       }
       stopStatus = StopStatus.PENDING;
       finalEstimatedCost = dto.estimated_cost || 0; 
-      
     } else {
-      // LUỒNG 2: DỮ LIỆU GOOGLE -> Nội suy giá từ priceLevel nếu không nhập
       stopStatus = StopStatus.INFO_ONLY;
-      
       if (dto.estimated_cost !== undefined) {
          finalEstimatedCost = dto.estimated_cost;
       } else {
@@ -250,58 +247,145 @@ async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journ
       }
     }
 
-    // 4. Xử lý thời gian bắt đầu mặc định
-    const finalStartTime = dto.start_time || 
-      (day.stops.length > 0 && dto.end_time 
-        ? JourneyUtils.addMinutesToTime(dto.end_time, -60) 
-        : '08:00');
-    
-    // 5. Khởi tạo Stop mới với tính năng Custom Budget & Prepaid
-    const newStop: JourneyStop = {
-      _id: new ObjectId().toString(),
-      place_id: dto.place_id,
-      start_time: finalStartTime,
-      end_time: dto.end_time || '09:00',
-      note: dto.note,
-      estimated_cost: finalEstimatedCost,
-      sequence: day.stops.length + 1,
-      cost_type: dto.cost_type || CostType.PER_PERSON,
-      transit_from_previous: null,
-      status: stopStatus,
+    // [NEW] Kịch bản chẻ Stop (Auto-Split) cho khách sạn
+    if (isAccommodation && dto.checkout_day_index !== undefined && dto.checkout_time) {
+      const checkInDay = journey.days[dto.day_index];
+      const checkOutDay = journey.days[dto.checkout_day_index];
       
-      // [NEW] Logic chia tiền tùy chỉnh và bao phòng
-      is_prepaid: dto.is_prepaid || false,
-      payer_id: dto.is_prepaid ? (dto.payer_id || userId) : undefined,
-      
-      // Nếu bao phòng thì mặc định không ai phải trả tiền. 
-      // Nếu không bao phòng, sử dụng danh sách truyền lên hoặc mặc định cả nhóm.
-      participant_ids: dto.is_prepaid 
-        ? [] 
-        : (dto.participant_ids && dto.participant_ids.length > 0 
-            ? dto.participant_ids 
-            : [...currentMemberIds])
-    };
-    
-    // 6. Lưu trữ và cập nhật hệ thống
-    day.stops.push(newStop);
+      if (!checkInDay || !checkOutDay) throw new NotFoundException('Ngày được chọn không hợp lệ');
 
-    // Tính toán lại lộ trình và thời gian di chuyển
+      // 1. Tạo Stop Nhận phòng
+      const checkInStartTime = dto.start_time || '14:00';
+      const checkInEndTime = JourneyUtils.addMinutesToTime(checkInStartTime, 45); // Cộng 45p
+      
+      const checkInStop: JourneyStop = {
+        _id: new ObjectId().toString(),
+        place_id: dto.place_id,
+        start_time: checkInStartTime,
+        end_time: checkInEndTime,
+        note: dto.note || 'Làm thủ tục nhận phòng',
+        estimated_cost: finalEstimatedCost,
+        is_manual_cost: dto.is_manual_cost || false,
+        sequence: checkInDay.stops.length + 1,
+        cost_type: dto.cost_type || CostType.SHARED,
+        transit_from_previous: null,
+        status: stopStatus,
+        is_prepaid: dto.is_prepaid || false,
+        participant_ids: dto.is_prepaid ? [] : (dto.participant_ids || [...currentMemberIds])
+      };
+      checkInDay.stops.push(checkInStop);
+
+      // 2. Tạo Stop Trả phòng
+      const checkOutEndTime = dto.checkout_time;
+      const checkOutStartTime = JourneyUtils.addMinutesToTime(checkOutEndTime, -30); // Trừ 30p
+      
+      const checkOutStop: JourneyStop = {
+        _id: new ObjectId().toString(),
+        place_id: dto.place_id,
+        start_time: checkOutStartTime,
+        end_time: checkOutEndTime,
+        note: 'Dọn đồ và trả phòng',
+        estimated_cost: 0, // Set về 0 để CostEstimation không bị tính đúp phí Activity
+        is_manual_cost: false,
+        sequence: checkOutDay.stops.length + 1,
+        cost_type: CostType.SHARED,
+        transit_from_previous: null,
+        status: StopStatus.INFO_ONLY,
+        is_prepaid: false,
+        participant_ids: [...currentMemberIds]
+      };
+      checkOutDay.stops.push(checkOutStop);
+
+    } else {
+      // Kịch bản bình thường cho các điểm đi chơi
+      const finalStartTime = dto.start_time || 
+        (day.stops.length > 0 && dto.end_time 
+          ? JourneyUtils.addMinutesToTime(dto.end_time, -60) 
+          : '08:00');
+      
+      const newStop: JourneyStop = {
+        _id: new ObjectId().toString(),
+        place_id: dto.place_id,
+        start_time: finalStartTime,
+        end_time: dto.end_time || '09:00',
+        note: dto.note,
+        estimated_cost: finalEstimatedCost,
+        sequence: day.stops.length + 1,
+        is_manual_cost: dto.is_manual_cost || false,
+        cost_type: dto.cost_type || CostType.PER_PERSON,
+        transit_from_previous: null,
+        status: stopStatus,
+        is_prepaid: dto.is_prepaid || false,
+        participant_ids: dto.is_prepaid 
+          ? [] 
+          : (dto.participant_ids && dto.participant_ids.length > 0 
+              ? dto.participant_ids 
+              : [...currentMemberIds])
+      };
+      day.stops.push(newStop);
+    }
+
     await this.schedulerService.recalculateEntireJourney(journey);
-    
-    // Đồng bộ lại ngân sách thông minh (bao gồm cả Member Balances)
     await this.budgetService.syncSmartBudget(journey);
-    
     await this.journeyRepo.save(journey);
     
-    // Ghi nhận hành động để cá nhân hóa gợi ý sau này
     this.userProfileService.scoreAction(userId, dto.place_id, UserActionType.ADD_TO_PLAN);
-    
-    // Thông báo cho các thành viên khác trong nhóm
     this.notifyMembers(journey, userId, 'đã thêm địa điểm mới', dto.day_index + 1);
     
     return journey;
   }
   
+  async updateStop(
+  journeyId: string, 
+  dayId: string, 
+  stopId: string, 
+  dto: UpdateStopDto, 
+  userId: string
+): Promise<Journey> {
+  const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
+  const day = journey.days.find(d => d.id === dayId);
+  if (!day) throw new NotFoundException('Không tìm thấy ngày này trong lịch trình');
+
+  const stop = day.stops.find(s => s._id === stopId);
+  if (!stop) throw new NotFoundException('Không tìm thấy địa điểm này');
+
+  if (dto.start_time !== undefined) stop.start_time = dto.start_time;
+  if (dto.end_time !== undefined) stop.end_time = dto.end_time;
+  if (dto.note !== undefined) stop.note = dto.note;
+  if (dto.estimated_cost !== undefined) {
+    if (stop.status === StopStatus.ARRIVED) {
+      throw new BadRequestException('Không thể sửa chi phí dự kiến khi địa điểm đã check-in. Vui lòng cập nhật chi phí thực tế.');
+    }
+    stop.estimated_cost = dto.estimated_cost;
+  }
+  if (dto.is_manual_cost !== undefined) stop.is_manual_cost = dto.is_manual_cost;
+  if (dto.cost_type !== undefined) stop.cost_type = dto.cost_type;
+
+  const currentMemberIds = journey.members?.map(m => m.user_id) || [];
+
+  if (dto.is_prepaid !== undefined) {
+    stop.is_prepaid = dto.is_prepaid;
+    if (dto.is_prepaid) {
+      stop.participant_ids = []; 
+    } else {
+      stop.participant_ids = dto.participant_ids && dto.participant_ids.length > 0 
+        ? dto.participant_ids 
+        : [...currentMemberIds];
+    }
+  } 
+  else if (dto.participant_ids !== undefined && !stop.is_prepaid) {
+    stop.participant_ids = dto.participant_ids;
+  }
+
+  await this.schedulerService.recalculateEntireJourney(journey);
+  await this.budgetService.syncSmartBudget(journey);
+  await this.journeyRepo.save(journey);
+
+  this.notifyMembers(journey, userId, 'đã cập nhật thông tin địa điểm', day.day_number);
+
+  return journey;
+}
+
   async moveStop(userId: string, dto: MoveStopDto): Promise<Journey> {
     const journey = await this.accessService.getJourneyWithAccess(dto.journey_id, userId, 'EDIT');
     const fromDay = journey.days.find(d => d.day_number === dto.from_day_number);
@@ -321,7 +405,7 @@ async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journ
     return journey;
   }
 
-async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: string) {
+  async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: string) {
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     const day = journey.days.find(d => d.day_number === dayNumber);
     
@@ -338,8 +422,6 @@ async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: s
                 );
            }
            
-           // [NEW] Trừ điểm sở thích (Revert Personalization Score)
-           // Không cần await để tối ưu performance
            this.userProfileService.scoreAction(userId, stop.place_id, UserActionType.REMOVE_FROM_PLAN);
 
            day.stops = day.stops.filter(s => s._id !== stopId);
@@ -362,13 +444,36 @@ async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: s
   }
 
   // =================================================================
-  // MEMBER MANAGEMENT (Merged from Groups)
+  // MEMBER MANAGEMENT
   // =================================================================
+
+  private async checkScheduleConflict(userId: string, newStart: Date, newEnd: Date, excludeJourneyId?: string): Promise<void> {
+    const query: any = {
+      $or: [{ owner_id: userId }, { "members.user_id": userId }],
+      status: { $nin: [JourneyStatus.COMPLETED, JourneyStatus.CANCELLED] },
+      start_date: { $lte: newEnd },
+      end_date: { $gte: newStart }
+    };
+
+    if (excludeJourneyId) {
+      query._id = { $ne: new ObjectId(excludeJourneyId) };
+    }
+
+    const conflictingJourney = await this.journeyRepo.findOne({ where: query });
+    
+    if (conflictingJourney) {
+      const startStr = new Date(conflictingJourney.start_date).toLocaleDateString('vi-VN');
+      const endStr = new Date(conflictingJourney.end_date).toLocaleDateString('vi-VN');
+      throw new ConflictException(
+        `Trùng lịch! Bạn đã có hành trình "${conflictingJourney.name}" diễn ra từ ${startStr} đến ${endStr}.`
+      );
+    }
+  }
 
   async joinJourney(inviteCode: string, userId: string): Promise<Journey> {
     const journey = await this.journeyRepo.findOne({ where: { invite_code: inviteCode.toUpperCase() } });
     if (!journey) throw new NotFoundException('Mã mời không hợp lệ');
-
+    await this.checkScheduleConflict(userId, new Date(journey.start_date), new Date(journey.end_date));
     const isMember = journey.members.some(m => m.user_id === userId);
     if (isMember) throw new ConflictException('Bạn đã là thành viên của hành trình này');
 
@@ -395,6 +500,12 @@ async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: s
     const isRequested = journey.join_requests?.some(r => r.user_id === userId);
     if (isRequested) throw new BadRequestException('Yêu cầu của bạn đang chờ duyệt');
 
+    await this.checkScheduleConflict(
+        userId, 
+        new Date(journey.start_date), 
+        new Date(journey.end_date)
+    );
+    
     if (!journey.join_requests) journey.join_requests = [];
     
     journey.join_requests.push({
@@ -439,7 +550,6 @@ async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: s
     await this.journeyRepo.save(journey);
     await this.budgetService.syncSmartBudget(journey);
 
-    // Notify the approved user
     this.notificationsService.createAndSend({
       recipient_id: requestUserId,
       sender_id: userId,
@@ -466,7 +576,6 @@ async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: s
 
     await this.journeyRepo.save(journey);
 
-    // Notify the rejected user
     this.notificationsService.createAndSend({
       recipient_id: requestUserId,
       sender_id: userId,

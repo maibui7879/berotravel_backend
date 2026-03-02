@@ -18,6 +18,7 @@ import { CheckInStopDto, ResumeJourneyDto } from './dto/tracking.dto';
 import { CreateJoinRequestDto, ReplyJoinRequestDto } from './dto/social-journey.dto';
 import { JoinJourneyDto, ManageMemberDto } from './dto/member-management.dto';
 import { MoveStopDto } from './dto/move-stop.dto';
+import { UpdateStopDto } from './dto/update-stop.dto';
 
 interface CurrentUser {
   sub: string;
@@ -89,6 +90,19 @@ export class JourneysController {
     return this.journeysService.addStop(id, dto, userId);
   }
 
+  @Patch(':id/days/:dayId/stops/:stopId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cập nhật thông tin chi tiết của một địa điểm (Stop)' })
+  updateStop(
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @Param('stopId') stopId: string,
+    @Body() dto: UpdateStopDto,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.updateStop(id, dayId, stopId, dto, userId);
+  }
+  
   @Delete(':id/days/:dayNumber/stops/:stopId')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Xóa một địa điểm khỏi lịch trình' })

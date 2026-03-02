@@ -67,13 +67,11 @@ export interface JourneyStop {
   transit_from_previous?: TransitInfo | null;
   is_manual_transit?: boolean;
   participant_ids?: string[];
-  // [NEW] Tracking Fields
   status: StopStatus;
   actual_arrival_time?: Date | null;
   actual_cost?: number;
   check_in_image?: string | null;
-  is_prepaid?: boolean; 
-  payer_id?: string;    
+  is_prepaid?: boolean;   
 }
 
 export interface JourneyDay {

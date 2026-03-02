@@ -62,13 +62,19 @@ export class AddStopDto {
   @IsString({ each: true })
   participant_ids?: string[];
   
-@ApiPropertyOptional({ description: 'Đánh dấu nếu điểm này đã được thanh toán trước' })
+  @ApiPropertyOptional({ description: 'Đánh dấu nếu điểm này đã được thanh toán trước' })
   @IsOptional()
   @IsBoolean()
   is_prepaid?: boolean; //
 
-  @ApiPropertyOptional({ description: 'ID người đã thanh toán trước (mặc định là người thêm stop)' })
+
+  @ApiPropertyOptional({ description: 'Dành riêng cho Khách sạn: Ngày trả phòng (Index)' })
+  @IsOptional()
+  @IsNumber()
+  checkout_day_index?: number;
+
+  @ApiPropertyOptional({ description: 'Dành riêng cho Khách sạn: Giờ trả phòng', example: '12:00' })
   @IsOptional()
   @IsString()
-  payer_id?: string; //
+  checkout_time?: string;
 }
