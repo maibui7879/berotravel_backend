@@ -78,7 +78,10 @@ export enum UserActionType {
   BOOKING = 'BOOKING',             // Đặt vé/phòng (Quan trọng nhất)
   RATING_HIGH = 'RATING_HIGH', 
   REMOVE_FROM_PLAN = 'REMOVE_FROM_PLAN', 
-  REMOVE_FROM_FAVORITE = 'REMOVE_FROM_FAVORITE'    // Đánh giá 4-5 sao
+  REMOVE_FROM_FAVORITE = 'REMOVE_FROM_FAVORITE',
+  POST_CONTENT = 'POST_CONTENT',   // Đăng bài viết mới
+  COMMENT = 'COMMENT',             // Bình luận bài viết
+  LIKE_POST = 'LIKE_POST',
 }
 
 export const ACTION_SCORES: Record<UserActionType, number> = {
@@ -90,7 +93,10 @@ export const ACTION_SCORES: Record<UserActionType, number> = {
   [UserActionType.BOOKING]: 3.0,
   [UserActionType.RATING_HIGH]: 1.5,
   [UserActionType.REMOVE_FROM_PLAN]: -1.0, 
-  [UserActionType.REMOVE_FROM_FAVORITE]: -0.5
+  [UserActionType.REMOVE_FROM_FAVORITE]: -0.5,
+  [UserActionType.POST_CONTENT]: 2.0, // Đóng góp nội dung có giá trị cao
+  [UserActionType.COMMENT]: 0.5,      // Tương tác thảo luận
+  [UserActionType.LIKE_POST]: 0.1,
 };
 
 // Điểm tối đa cho 1 category (tránh việc 1 sở thích lấn át tất cả)

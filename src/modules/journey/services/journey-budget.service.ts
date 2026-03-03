@@ -1,5 +1,7 @@
+// journey/services/journey-budget.service.ts
+
 import { Injectable } from '@nestjs/common';
-import { Journey, CostType, BudgetBreakdown, StopStatus } from '../entities/journey.entity';
+import { Journey, CostType, StopStatus } from '../entities/journey.entity';
 import { CostEstimationService } from './cost-estimation.service';
 
 @Injectable()
@@ -11,46 +13,44 @@ export class JourneyBudgetService {
       const currentMemberIds = journey.members?.map(m => m.user_id) || [];
       const balances = new Map<string, { spent: number; estimated: number }>();
       
-      // Khởi tạo balance cho tất cả thành viên
       currentMemberIds.forEach(id => balances.set(id, { spent: 0, estimated: 0 }));
 
-      // 1. Tự động cập nhật participant_ids cho Stop PENDING nếu chưa có
+      // 1. Duyệt qua các Stop
       journey.days.forEach(day => {
         day.stops.forEach(stop => {
-          if (stop.status === StopStatus.PENDING && (!stop.participant_ids || stop.participant_ids.length === 0)) {
-            // Nếu là Prepaid (bao phòng), thường danh sách người tham gia trả tiền sẽ trống
-            stop.participant_ids = stop.is_prepaid ? [] : [...currentMemberIds];
-          }
-        });
-      });
+          if (stop.is_prepaid || stop.status === StopStatus.SKIPPED) return;
 
-      // 2. Duyệt qua các Stop để tính toán Balance riêng lẻ
-      journey.days.forEach(day => {
-        day.stops.forEach(stop => {
-          // Nếu đã bao phòng (prepaid), chi phí đối với những người khác là 0
-          if (stop.is_prepaid) return;
+          const baseEstimatedCost = stop.estimated_cost || 0;
+          const participants = (stop.participant_ids && stop.participant_ids.length > 0)
+            ? stop.participant_ids 
+            : currentMemberIds;
 
-          const cost = stop.actual_cost !== undefined ? stop.actual_cost : (stop.estimated_cost || 0);
-          if (cost === 0) return;
-
-          const participants = stop.participant_ids || [];
-          if (participants.length === 0) return;
-
-          const amountPerPerson = stop.cost_type === CostType.SHARED 
-            ? cost / participants.length 
-            : cost;
+          const estimatedPerPerson = stop.cost_type === CostType.SHARED 
+            ? baseEstimatedCost / (participants.length || 1) 
+            : baseEstimatedCost;
 
           participants.forEach(uId => {
             const b = balances.get(uId);
-            if (b) {
-              if (stop.status === StopStatus.ARRIVED) b.spent += amountPerPerson;
-              else b.estimated += amountPerPerson;
+            if (!b) return;
+
+            // Kiểm tra xem user này đã check-in cá nhân chưa
+            const myCheckIn = stop.participant_checkins?.find(c => c.user_id === uId);
+
+            if (myCheckIn) {
+              // Nếu đã check-in: Cộng vào spent (ưu tiên actual_cost cá nhân, nếu ko có thì dùng estimated)
+              const finalSpent = myCheckIn.actual_cost !== undefined 
+                ? myCheckIn.actual_cost 
+                : estimatedPerPerson;
+              b.spent += finalSpent;
+            } else {
+              // Nếu chưa check-in: Luôn nằm ở mục estimated
+              b.estimated += estimatedPerPerson;
             }
           });
         });
       });
 
-      // 3. Tính toán chi phí hệ thống (Accommodation & Transportation)
+      // 2. Tính toán chi phí hệ thống (Phòng, Xe - Thường là Shared và mặc định Pending)
       const memberCountForEstimation = Math.max(journey.members?.length || 1, journey.planned_members_count || 1);
       const estimation = await this.costService.estimateJourneyBudget(
         journey._id.toString(),
@@ -58,20 +58,18 @@ export class JourneyBudgetService {
         memberCountForEstimation,
       );
 
-      // Chi phí hệ thống mặc định chia đều cho những người hiện có (hoặc planned)
       const systemSharedPerPerson = Math.ceil(
         (estimation.accommodation.reduce((s, i) => s + i.subtotal, 0) +
         estimation.transportation.filter(t => t.is_shared).reduce((s, i) => s + i.estimated_cost, 0)) / memberCountForEstimation
       );
 
-      // 4. Tổng hợp vào BudgetAnalysis
+      // 3. Tổng hợp
       const memberBalances = Array.from(balances.entries()).map(([uId, val]) => ({
         user_id: uId,
         total_spent: Math.ceil(val.spent),
         total_estimated: Math.ceil(val.estimated + systemSharedPerPerson)
       }));
 
-      // Tính các chỉ số tổng quát dựa trên Owner (hoặc trung bình) để hiển thị Dashboard
       const totalShared = estimation.summary.grand_total;
       const grandTotalPerPerson = Math.ceil(totalShared / memberCountForEstimation);
       const limit = journey.budget_limit || 0;

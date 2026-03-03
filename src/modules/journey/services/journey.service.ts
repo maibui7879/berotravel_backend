@@ -51,7 +51,6 @@ export class JourneysService {
     return crypto.randomBytes(3).toString('hex').toUpperCase();
   }
 
-  // Core CRUD
   async create(dto: CreateJourneyDto, userId: string): Promise<Journey> {
     const start = new Date(dto.start_date);
     const end = new Date(dto.end_date);
@@ -190,9 +189,6 @@ export class JourneysService {
     return { success: true, status: dto.status };
   }
 
-  // =================================================================
-  // ADD STOP & AUTO-SPLIT LOGIC
-  // =================================================================
   async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     
@@ -213,7 +209,6 @@ export class JourneysService {
     
     const isAccommodation = ['HOTEL', 'HOMESTAY'].includes(place.category);
 
-    // [NEW] Validate Logic Auto-Split
     if (dto.checkout_day_index !== undefined || dto.checkout_time) {
       if (!isAccommodation) {
         throw new BadRequestException('Tính năng thiết lập ngày/giờ trả phòng chỉ áp dụng cho nơi lưu trú (Khách sạn, Homestay).');
@@ -247,14 +242,12 @@ export class JourneysService {
       }
     }
 
-    // [NEW] Kịch bản chẻ Stop (Auto-Split) cho khách sạn
     if (isAccommodation && dto.checkout_day_index !== undefined && dto.checkout_time) {
       const checkInDay = journey.days[dto.day_index];
       const checkOutDay = journey.days[dto.checkout_day_index];
       
       if (!checkInDay || !checkOutDay) throw new NotFoundException('Ngày được chọn không hợp lệ');
 
-      // 1. Tạo Stop Nhận phòng
       const checkInStartTime = dto.start_time || '14:00';
       const checkInEndTime = JourneyUtils.addMinutesToTime(checkInStartTime, 45); // Cộng 45p
       
@@ -271,11 +264,12 @@ export class JourneysService {
         transit_from_previous: null,
         status: stopStatus,
         is_prepaid: dto.is_prepaid || false,
-        participant_ids: dto.is_prepaid ? [] : (dto.participant_ids || [...currentMemberIds])
+        participant_ids: dto.is_prepaid ? [] : (dto.participant_ids || [...currentMemberIds]),
+        participant_checkins: [],
       };
       checkInDay.stops.push(checkInStop);
 
-      // 2. Tạo Stop Trả phòng
+  
       const checkOutEndTime = dto.checkout_time;
       const checkOutStartTime = JourneyUtils.addMinutesToTime(checkOutEndTime, -30); // Trừ 30p
       
@@ -285,19 +279,19 @@ export class JourneysService {
         start_time: checkOutStartTime,
         end_time: checkOutEndTime,
         note: 'Dọn đồ và trả phòng',
-        estimated_cost: 0, // Set về 0 để CostEstimation không bị tính đúp phí Activity
+        estimated_cost: 0,  
         is_manual_cost: false,
         sequence: checkOutDay.stops.length + 1,
         cost_type: CostType.SHARED,
         transit_from_previous: null,
         status: StopStatus.INFO_ONLY,
         is_prepaid: false,
-        participant_ids: [...currentMemberIds]
+        participant_ids: [...currentMemberIds],
+        participant_checkins: [],
       };
       checkOutDay.stops.push(checkOutStop);
 
-    } else {
-      // Kịch bản bình thường cho các điểm đi chơi
+    } else { 
       const finalStartTime = dto.start_time || 
         (day.stops.length > 0 && dto.end_time 
           ? JourneyUtils.addMinutesToTime(dto.end_time, -60) 
@@ -320,7 +314,8 @@ export class JourneysService {
           ? [] 
           : (dto.participant_ids && dto.participant_ids.length > 0 
               ? dto.participant_ids 
-              : [...currentMemberIds])
+              : [...currentMemberIds]),
+        participant_checkins: [],
       };
       day.stops.push(newStop);
     }
@@ -516,6 +511,7 @@ export class JourneysService {
     await this.journeyRepo.save(journey);
   }
 
+  
   async getPendingJoinRequests(journeyId: string, userId: string): Promise<JourneyJoinRequest[]> {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');

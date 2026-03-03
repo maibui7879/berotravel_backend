@@ -1,6 +1,6 @@
 import { Entity, ObjectIdColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 import { ObjectId } from 'mongodb';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export interface TransitInfo {
   mode: 'DRIVING' | 'WALKING' | 'PUBLIC_TRANSPORT' | 'FLIGHT' | 'BOAT';
@@ -54,6 +54,13 @@ export interface MemberBalance {
   total_estimated: number; // Tiền dự kiến cho tương lai (Stop Status: PENDING)
 }
 
+export class ParticipantCheckIn {
+  @ApiProperty() user_id: string;
+  @ApiProperty() checked_in_at: Date;
+  @ApiPropertyOptional() actual_cost?: number;
+  @ApiPropertyOptional() check_in_image?: string;
+}
+
 export interface JourneyStop {
   _id: string; 
   place_id: string;
@@ -71,7 +78,8 @@ export interface JourneyStop {
   actual_arrival_time?: Date | null;
   actual_cost?: number;
   check_in_image?: string | null;
-  is_prepaid?: boolean;   
+  is_prepaid?: boolean;
+  participant_checkins: ParticipantCheckIn[];   
 }
 
 export interface JourneyDay {

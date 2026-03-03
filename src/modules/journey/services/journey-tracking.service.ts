@@ -6,6 +6,8 @@ import { Journey, JourneyStatus, StopStatus, CostType } from '../entities/journe
 import { JourneyBudgetService } from './journey-budget.service';
 import { BookingsService } from '../../bookings/bookings.service';
 import { CheckInStopDto, ResumeJourneyDto } from '../dto/tracking.dto';
+import { NotificationType } from 'src/modules/notification/entities/notification.entity';
+import { NotificationsService } from 'src/modules/notification/notification.service';
 
 @Injectable()
 export class JourneyTrackingService {
@@ -13,6 +15,7 @@ export class JourneyTrackingService {
     @InjectRepository(Journey) private readonly journeyRepo: MongoRepository<Journey>,
     private readonly budgetService: JourneyBudgetService,
     private readonly bookingsService: BookingsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async startJourney(journeyId: string, userId: string): Promise<Journey> {
@@ -53,61 +56,72 @@ export class JourneyTrackingService {
     return await this.journeyRepo.save(journey);
   }
 
-  async checkInStop(
+    async checkInStop(
     journeyId: string, 
     dayId: string, 
     stopId: string, 
     userId: string, 
     dto: CheckInStopDto
-  ): Promise<Journey> {
-    const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
-    if (!journey) throw new NotFoundException('Hành trình không tồn tại');
-    
-    if (journey.owner_id !== userId && !journey.members.some(m => m.user_id === userId)) {
-        throw new BadRequestException('Bạn không phải thành viên chuyến đi');
-    }
+    ): Promise<Journey> {
+        const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+        if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+        
+        const day = journey.days.find(d => d.id === dayId);
+        const stop = day?.stops.find(s => s._id === stopId);
+        if (!stop) throw new NotFoundException('Stop không tồn tại');
 
-    const day = journey.days.find(d => d.id === dayId);
-    if (!day) throw new NotFoundException('Day not found');
+        // Kiểm tra xem user có quyền tham gia Stop này không
+        const isParticipant = stop.participant_ids?.includes(userId) || journey.owner_id === userId;
+        if (!isParticipant) throw new BadRequestException('Bạn không nằm trong danh sách tham gia điểm này');
 
-    const stop = day.stops.find(s => s._id === stopId);
-    if (!stop) throw new NotFoundException('Stop not found');
+        // Khởi tạo mảng nếu chưa có
+        if (!stop.participant_checkins) stop.participant_checkins = [];
 
-    stop.status = StopStatus.ARRIVED;
-    stop.actual_arrival_time = new Date();
-    
-    if (dto.actual_cost !== undefined && !stop.is_prepaid) {
-        let finalCostPerPerson = dto.actual_cost;
-        if (dto.is_total_bill) {
-             // Chia cho số người thực tế tham gia địa điểm này thay vì cả đoàn
-             const participantsAtStop = stop.participant_ids?.length || journey.members.length || 1;
-             
-             if (stop.cost_type === CostType.PER_PERSON) {
-                 finalCostPerPerson = dto.actual_cost / participantsAtStop;
-             } else {
-                 finalCostPerPerson = dto.actual_cost; // Giữ nguyên nếu là SHARED bill
-             }
-        } 
-        stop.estimated_cost = finalCostPerPerson;
-        stop.actual_cost = finalCostPerPerson;
-    }
-    
-    if (dto.check_in_image) {
-        stop.check_in_image = dto.check_in_image;
-    }
+        // Tìm bản ghi check-in cũ của user này (nếu có) để cập nhật hoặc thêm mới
+        let userCheckIn = stop.participant_checkins.find(c => c.user_id === userId);
+        
+        if (userCheckIn) {
+            userCheckIn.checked_in_at = new Date();
+            userCheckIn.actual_cost = dto.actual_cost;
+            userCheckIn.check_in_image = dto.check_in_image;
+        } else {
+            stop.participant_checkins.push({
+            user_id: userId,
+            checked_in_at: new Date(),
+            actual_cost: dto.actual_cost,
+            check_in_image: dto.check_in_image
+            });
+        }
+        
+        const targetParticipants = stop.participant_ids && stop.participant_ids.length > 0 
+        ? stop.participant_ids 
+        : journey.members.map(m => m.user_id);
 
-    this.updateProgress(journey);
-    await this.budgetService.syncSmartBudget(journey);
-    return await this.journeyRepo.save(journey);
-  }
+        if (stop.participant_checkins.length >= targetParticipants.length) {
+            stop.status = StopStatus.ARRIVED; 
+        }
 
-  async pauseJourney(journeyId: string, userId: string): Promise<Journey> {
-    const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
-    if (!journey) throw new NotFoundException('Hành trình không tồn tại');
-    if (journey.owner_id !== userId) throw new BadRequestException('Forbidden');
+        if (stop.status === StopStatus.ARRIVED) {
+            this.notificationsService.createAndSend({
+                recipient_id: journey.owner_id,
+                type: NotificationType.JOURNEY_UPDATE,
+                title: 'Đã đông đủ!',
+                message: `Tất cả thành viên đã check-in tại ${stop.note || 'địa điểm'}.`,
+                metadata: { journey_id: journeyId }
+            });
+        }
+        this.updateProgress(journey);
+        await this.budgetService.syncSmartBudget(journey);
+        return await this.journeyRepo.save(journey);
+        }
 
-    journey.status = JourneyStatus.PAUSED;
-    return await this.journeyRepo.save(journey);
+    async pauseJourney(journeyId: string, userId: string): Promise<Journey> {
+        const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+        if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+        if (journey.owner_id !== userId) throw new BadRequestException('Forbidden');
+
+        journey.status = JourneyStatus.PAUSED;
+        return await this.journeyRepo.save(journey);
   }
 
   // =================================================================
@@ -234,7 +248,42 @@ export class JourneyTrackingService {
     return await this.journeyRepo.save(journey);
   }
 
-  // ... (Helper updateProgress giữ nguyên) ...
+  async getCheckInStatus(journeyId: string, dayId: string, stopId: string) {
+  const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+  if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+
+  const day = journey.days.find(d => d.id === dayId);
+  const stop = day?.stops.find(s => s._id === stopId);
+  if (!stop) throw new NotFoundException('Stop không tồn tại');
+
+  // Lấy danh sách ID những người cần tham gia (mặc định là tất cả thành viên nếu không chỉ định)
+  const participants = stop.participant_ids && stop.participant_ids.length > 0 
+    ? stop.participant_ids 
+    : journey.members.map(m => m.user_id);
+
+  // Lấy danh sách chi tiết những người đã check-in
+  const checkedInUsers = stop.participant_checkins || [];
+
+  return {
+    stop_name: stop.note || 'Địa điểm không tên',
+    total_participants: participants.length,
+    checked_in_count: checkedInUsers.length,
+    progress_percentage: participants.length > 0 
+      ? Math.round((checkedInUsers.length / participants.length) * 100) 
+      : 0,
+    // Trả về danh sách chi tiết để hiển thị UI (avatar, tên, giờ check-in)
+    check_in_list: checkedInUsers.map(checkin => ({
+      user_id: checkin.user_id,
+      checked_in_at: checkin.checked_in_at,
+      image: checkin.check_in_image,
+      is_completed: true
+    })),
+    // Danh sách những người chưa check-in
+    pending_list: participants.filter(id => !checkedInUsers.some(c => c.user_id === id))
+  };
+}
+
+
   private updateProgress(journey: Journey) {
     let total = 0;
     let completed = 0;

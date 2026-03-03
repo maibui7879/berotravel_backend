@@ -192,6 +192,17 @@ export class JourneysController {
   ) {
     return this.trackingService.checkInStop(id, dayId, stopId, userId, dto);
   }
+
+  @Get(':id/days/:dayId/stops/:stopId/check-in-status')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lấy danh sách điểm danh và tiến độ check-in của một Stop' })
+  getCheckInStatus(
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @Param('stopId') stopId: string
+  ) {
+    return this.trackingService.getCheckInStatus(id, dayId, stopId);
+  }
   
   @Patch(':id/days/:dayId/stops/:stopId/skip')
   @ApiBearerAuth()
