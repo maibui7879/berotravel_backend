@@ -9,7 +9,7 @@ import { CreatePostDto, CreateCommentDto, PostSearchFilterDto } from '../dto/for
 import { NotificationsService } from '../../notification/notification.service';
 import { NotificationType } from '../../notification/entities/notification.entity';
 import { UserProfileService } from '../../users/services/user-profile.service';
-import { UserActionType } from 'src/common/constants';
+import { UserActionType } from '../../../common/constants';
 
 @Injectable()
 export class ForumService {

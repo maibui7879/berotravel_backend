@@ -5,7 +5,7 @@ import { User } from '../entities/user.entity';
 import { ObjectId } from 'mongodb';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { BadRequestException } from '@nestjs/common/exceptions';
-import { Role } from 'src/common/constants';
+import { Role } from '../../../common/constants';
 @Injectable()
 export class UsersService {
   constructor(
