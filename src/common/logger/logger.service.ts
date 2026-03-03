@@ -5,7 +5,7 @@ import DailyRotateFile from 'winston-daily-rotate-file';
 
 /**
  * Winston Logger Service
- * Provides centralized logging with file rotation and formatting
+ * Cung cấp giải pháp logging tập trung với khả năng xoay vòng file và định dạng tùy chỉnh
  */
 @Injectable()
 export class LoggerService {
@@ -16,31 +16,35 @@ export class LoggerService {
     const logLevel = this.configService.get('LOG_LEVEL', 'info');
     const environment = this.configService.get('NODE_ENV', 'development');
 
-    // Logger configuration
-    this.logger = winston.createLogger({
-      level: logLevel,
-      format: winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.errors({ stack: true }),
-        winston.format.json(),
-      ),
-      defaultMeta: { service: 'bero-travel' },
-      transports: [
-        // Console output
-        new winston.transports.Console({
-          format: winston.format.combine(
-            winston.format.colorize(),
-            winston.format.printf(({ timestamp, level, message, ...meta }) => {
-              let metaStr = '';
-              if (Object.keys(meta).length > 0) {
-                metaStr = ` ${JSON.stringify(meta)}`;
-              }
-              return `${timestamp} [${level}]: ${message}${metaStr}`;
-            }),
-          ),
-        }),
+    // 1. Cấu hình định dạng log cơ bản
+    const logFormat = winston.format.combine(
+      winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+      winston.format.errors({ stack: true }),
+      winston.format.json(),
+    );
 
-        // File logging - all logs
+    // 2. Khởi tạo danh sách các kênh xuất log (transports)
+    const transports: winston.transport[] = [
+      // Kênh Console - Luôn hoạt động để Vercel thu thập log
+      new winston.transports.Console({
+        format: winston.format.combine(
+          winston.format.colorize(),
+          winston.format.printf(({ timestamp, level, message, ...meta }) => {
+            let metaStr = '';
+            if (Object.keys(meta).length > 0) {
+              metaStr = ` ${JSON.stringify(meta)}`;
+            }
+            return `${timestamp} [${level}]: ${message}${metaStr}`;
+          }),
+        ),
+      }),
+    ];
+
+    // 3. CHỈ thêm các kênh ghi file nếu KHÔNG phải môi trường Production (Vercel)
+    // Điều này giúp tránh lỗi "EROFS: read-only file system" trên Vercel
+    if (environment !== 'production') {
+      transports.push(
+        // Ghi toàn bộ log
         new DailyRotateFile({
           filename: `${logDir}/application-%DATE%.log`,
           datePattern: 'YYYY-MM-DD',
@@ -48,8 +52,7 @@ export class LoggerService {
           maxFiles: this.configService.get('LOG_MAX_FILES', '14'),
           format: winston.format.json(),
         }),
-
-        // File logging - error only
+        // Chỉ ghi log lỗi
         new DailyRotateFile({
           filename: `${logDir}/errors-%DATE%.log`,
           datePattern: 'YYYY-MM-DD',
@@ -58,19 +61,19 @@ export class LoggerService {
           maxFiles: this.configService.get('LOG_MAX_FILES', '14'),
           format: winston.format.json(),
         }),
-      ],
-    });
-
-    // Add sentry in production
-    if (environment === 'production') {
-      const sentryDsn = this.configService.get('SENTRY_DSN');
-      if (sentryDsn) {
-        // Sentry integration would go here
-        // This is a placeholder for actual Sentry setup
-      }
+      );
     }
+
+    // 4. Khởi tạo instance của Winston
+    this.logger = winston.createLogger({
+      level: logLevel,
+      format: logFormat,
+      defaultMeta: { service: 'bero-travel' },
+      transports: transports,
+    });
   }
 
+  // Các phương thức logging tiêu chuẩn
   log(message: string, context?: string, meta?: any) {
     this.logger.info(message, { context, ...meta });
   }
@@ -93,7 +96,7 @@ export class LoggerService {
     this.logger.silly(message, { context, ...meta });
   }
 
-  // Log HTTP requests (can be used in middleware)
+  // Ghi log yêu cầu HTTP
   logHttpRequest(method: string, url: string, statusCode: number, duration: number) {
     this.logger.info('HTTP Request', {
       method,
@@ -104,7 +107,7 @@ export class LoggerService {
     });
   }
 
-  // Log database queries
+  // Ghi log truy vấn cơ sở dữ liệu
   logQuery(query: string, duration: number, params?: any[]) {
     if (process.env.NODE_ENV !== 'production') {
       this.logger.debug('Database Query', {
@@ -115,7 +118,7 @@ export class LoggerService {
     }
   }
 
-  // Log payment transactions
+  // Ghi log giao dịch thanh toán
   logPaymentTransaction(
     paymentId: string,
     status: string,
@@ -132,7 +135,7 @@ export class LoggerService {
     });
   }
 
-  // Log user actions (for audit trail)
+  // Ghi log hành động người dùng (audit trail)
   logUserAction(userId: string, action: string, resource: string, meta?: any) {
     this.logger.info('User Action', {
       userId,
@@ -143,7 +146,7 @@ export class LoggerService {
     });
   }
 
-  // Log errors with context
+  // Tiện ích ghi log lỗi có context
   logError(error: Error | string, context?: string, meta?: any) {
     const message = typeof error === 'string' ? error : error.message;
     const stack = typeof error === 'string' ? undefined : error.stack;
