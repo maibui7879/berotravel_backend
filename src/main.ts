@@ -1,3 +1,4 @@
+import 'module-alias/register';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -6,7 +7,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { AtGuard } from './common/guards/at.guard';
-import 'module-alias/register';
+
 // Import thêm các thư viện cho Serverless
 import { Handler, Context, Callback } from 'aws-lambda';
 import serverlessExpress from '@vendia/serverless-express';
