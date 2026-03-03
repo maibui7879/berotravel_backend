@@ -4,8 +4,8 @@ import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 
 import { UserTravelProfile } from '../entities/user-travel-profile.entity';
-import { Place } from 'src/modules/places/entities/place.entity';
-import { UserActionType, ACTION_SCORES, MAX_CATEGORY_SCORE } from 'src/common/constants';
+import { Place } from '../../../modules/places/entities/place.entity';
+import { UserActionType, ACTION_SCORES, MAX_CATEGORY_SCORE } from '../../../common/constants';
 
 @Injectable()
 export class UserProfileService {
