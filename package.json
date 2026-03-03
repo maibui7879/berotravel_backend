@@ -5,7 +5,6 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
-
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -21,7 +20,6 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
-    "@codegenie/serverless-express": "github:vendia/serverless-express",
     "@google/generative-ai": "^0.24.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
@@ -46,7 +44,6 @@
     "class-validator": "^0.14.3",
     "helmet": "^8.1.0",
     "joi": "^18.0.2",
-    "module-alias": "^2.3.4",
     "mongodb": "^7.0.0",
     "mongoose": "^9.0.2",
     "multer": "^2.0.2",
