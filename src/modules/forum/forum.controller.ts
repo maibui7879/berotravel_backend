@@ -1,13 +1,13 @@
-// src/modules/forum/forum.controller.ts
+// ../../modules/forum/forum.controller.ts
 
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ForumService } from './services/forum.service';
 import { CreatePostDto, CreateCommentDto, PostSearchFilterDto } from './dto/forum.dto';
-import { AtGuard } from 'src/common/guards/at.guard';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
-import { Public } from 'src/common/decorators/public.decorator';
-import { Role } from 'src/common/constants';
+import { AtGuard } from '../../common/guards/at.guard';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
+import { Role } from '../../common/constants';
 
 @ApiTags('Forum (Diễn đàn & Cộng đồng)')
 @Controller('forum')

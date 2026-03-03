@@ -3,12 +3,12 @@ import { PlacesService } from './places.service';
 import { CreatePlaceDto } from './dto/create-place.dto';
 import { UpdatePlaceDto } from './dto/update-place.dto';
 import { SearchPlaceDto } from './dto/search-place.dto';
-import { Role, PlaceStatus } from 'src/common/constants'; // Import PlaceStatus
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
-import { Public } from 'src/common/decorators/public.decorator';
-import { AtGuard } from 'src/common/guards/at.guard';
-import { RolesGuard } from 'src/common/guards/role.guard';
+import { Role, PlaceStatus } from '../../common/constants'; // Import PlaceStatus
+import { Roles } from '../../common/decorators/roles.decorator';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
+import { AtGuard } from '../../common/guards/at.guard';
+import { RolesGuard } from '../../common/guards/role.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 
 interface CurrentUser {

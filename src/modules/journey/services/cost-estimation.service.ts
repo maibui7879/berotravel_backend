@@ -1,5 +1,3 @@
-// src/modules/journey/services/cost-estimation.service.ts
-
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
@@ -8,7 +6,7 @@ import { ObjectId } from 'mongodb';
 // Entities
 import { Journey, JourneyDay } from '../entities/journey.entity';
 import { InventoryUnit } from '../../bookings/entities/inventory-unit.entity';
-import { Availability as AvailabilityEntity } from 'src/modules/bookings/entities/availability.entity';
+import { Availability as AvailabilityEntity } from '../../bookings/entities/availability.entity';
 import { Place } from '../../places/entities/place.entity';
 
 // ============================================================================

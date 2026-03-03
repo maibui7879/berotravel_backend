@@ -1,5 +1,3 @@
-// src/modules/journey/services/journey.service.ts
-
 import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
@@ -13,11 +11,11 @@ import { AddStopDto } from '../dto/add-stop.dto';
 import { MoveStopDto } from '../dto/move-stop.dto';
 import { CreateJoinRequestDto, ReplyJoinRequestDto, ReplyStatus } from '../dto/social-journey.dto';
 import { UpdateStopDto } from '../dto/update-stop.dto';
-import { Role, UserActionType } from 'src/common/constants';
+import { Role, UserActionType } from '../../../common/constants';
 import { JourneyStatus } from '../entities/journey.entity';
 import { NotificationsService } from '../../notification/notification.service';
-import { UsersService } from 'src/modules/users/services/users.service';
-import { UserProfileService } from 'src/modules/users/services/user-profile.service'; 
+import { UsersService } from '../../../modules/users/services/users.service';
+import { UserProfileService } from '../../../modules/users/services/user-profile.service'; 
 import { JourneyAccessService } from './journey-access.service';
 import { JourneySchedulerService } from './journey-scheduler.service';
 import { JourneyBudgetService } from './journey-budget.service';

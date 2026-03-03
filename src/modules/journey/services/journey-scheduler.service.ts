@@ -1,5 +1,3 @@
-// src/modules/journey/services/journey-scheduler.service.ts
-
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';

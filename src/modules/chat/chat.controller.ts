@@ -2,11 +2,11 @@ import { Controller, Get, Delete, Param, Query, UseGuards } from '@nestjs/common
 import { ChatService } from './chat.service';
 import { SearchChatDto } from './dto/chat.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
-import { AtGuard } from 'src/common/guards/at.guard';
-import { RolesGuard } from 'src/common/guards/role.guard';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { Role } from 'src/common/constants';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { AtGuard } from '../../common/guards/at.guard';
+import { RolesGuard } from '../../common/guards/role.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { Role } from '../../common/constants';
 
 @ApiTags('Chat (HTTP API)')
 @Controller('chat')

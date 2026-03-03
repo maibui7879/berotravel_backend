@@ -2,8 +2,8 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@n
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { FriendsService } from './friend.service';
 import { SendFriendRequestDto, RespondFriendRequestDto } from './dto/add-friend.dto';
-import { AtGuard } from 'src/common/guards/at.guard';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
+import { AtGuard } from '../../common/guards/at.guard';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { FriendStatus } from './entities/friendship.entity';
 
 @ApiTags('Friends (Bạn bè)')

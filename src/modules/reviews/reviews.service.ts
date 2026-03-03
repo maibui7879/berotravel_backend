@@ -7,7 +7,7 @@ import { Review, ReviewStatus } from './entities/review.entity';
 import { Place } from '../places/entities/place.entity';
 // [NEW] Import Service và Constants
 import { UserProfileService } from '../users/services/user-profile.service';
-import { UserActionType } from 'src/common/constants';
+import { UserActionType } from '../../common/constants';
 
 @Injectable()
 export class ReviewsService {

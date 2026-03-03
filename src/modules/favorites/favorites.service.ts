@@ -11,7 +11,7 @@ import { User } from '../users/entities/user.entity';
 import { FriendsService } from '../friend/friend.service';
 // [NEW] Import Service và Constant để tính điểm
 import { UserProfileService } from '../users/services/user-profile.service';
-import { UserActionType } from 'src/common/constants';
+import { UserActionType } from '../../common/constants';
 
 @Injectable()
 export class FavoritesService {

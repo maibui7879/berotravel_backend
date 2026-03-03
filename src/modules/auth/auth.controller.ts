@@ -25,9 +25,9 @@ import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 
 // Decorators & Guards
-import { Public } from 'src/common/decorators/public.decorator';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
-import { RtGuard } from 'src/common/guards/rt.guard';
+import { Public } from '../../common/decorators/public.decorator';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { RtGuard } from '../../common/guards/rt.guard';
 
 @ApiTags('Authentication') 
 @Controller('auth')

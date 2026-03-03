@@ -6,7 +6,7 @@ import { Booking } from './entities/booking.entity';
 import { InventoryUnit } from './entities/inventory-unit.entity';
 import { Availability } from './entities/availability.entity';
 import { Place } from '../places/entities/place.entity';
-import { Role } from 'src/common/constants';
+import { Role } from '../../common/constants';
 
 @Injectable()
 export class BookingsService {

@@ -1,10 +1,10 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ReviewsService } from './reviews.service';
-import { Public } from 'src/common/decorators/public.decorator';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { RolesGuard } from 'src/common/guards/role.guard';
-import { Role } from 'src/common/constants';
+import { Public } from '../../common/decorators/public.decorator';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/role.guard';
+import { Role } from '../../common/constants';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { CreateReviewDto, ReplyReviewDto } from './dto/review.dto';
 

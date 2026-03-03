@@ -3,8 +3,8 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { FavoritesService } from './favorites.service';
 import { ToggleFavoriteDto } from './dto/favorite.dto';
 import { FavoriteType } from './entities/favorite.entity';
-import { AtGuard } from 'src/common/guards/at.guard';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
+import { AtGuard } from '../../common/guards/at.guard';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 
 @ApiTags('Favorites (Yêu thích)')
 @Controller('favorites')

@@ -1,10 +1,10 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
-import { Role } from 'src/common/constants';
-import { Public } from 'src/common/decorators/public.decorator';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { RolesGuard } from 'src/common/guards/role.guard';
+import { Role } from '../../common/constants';
+import { Public } from '../../common/decorators/public.decorator';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/role.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CreateBookingDto } from './dto/create-booking.dto';
 

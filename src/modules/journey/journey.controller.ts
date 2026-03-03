@@ -5,11 +5,11 @@ import { JourneysService } from './services/journey.service';
 import { CostEstimationService } from './services/cost-estimation.service';
 import { JourneyTrackingService } from './services/journey-tracking.service';
 
-import { Role } from 'src/common/constants';
-import { Public } from 'src/common/decorators/public.decorator';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
-import { AtGuard } from 'src/common/guards/at.guard';
-import { RolesGuard } from 'src/common/guards/role.guard';
+import { Role } from '../../common/constants';
+import { Public } from '../../common/decorators/public.decorator';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { AtGuard } from '../../common/guards/at.guard';
+import { RolesGuard } from '../../common/guards/role.guard';
 
 import { CreateJourneyDto } from './dto/create-journey.dto';
 import { UpdateJourneyDto } from './dto/update-journey.dto';

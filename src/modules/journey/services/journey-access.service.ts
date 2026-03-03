@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 import { Journey, JourneyVisibility } from '../entities/journey.entity';
-import { FriendsService } from 'src/modules/friend/friend.service';
+import { FriendsService } from '../../friend/friend.service';
 @Injectable()
 export class JourneyAccessService {
   constructor(

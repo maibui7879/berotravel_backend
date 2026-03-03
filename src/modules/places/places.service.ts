@@ -15,7 +15,7 @@ import {
   PlaceEditRequest,
   EditRequestStatus,
 } from './entities/place-edit-request.entity';
-import { Role, PlaceStatus, UserActionType } from 'src/common/constants';
+import { Role, PlaceStatus, UserActionType } from '../../common/constants';
 import { SearchPlaceDto, SortBy, SortOrder } from './dto/search-place.dto';
 import { CreatePlaceDto } from './dto/create-place.dto';
 

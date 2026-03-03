@@ -6,8 +6,8 @@ import { Journey, JourneyStatus, StopStatus, CostType } from '../entities/journe
 import { JourneyBudgetService } from './journey-budget.service';
 import { BookingsService } from '../../bookings/bookings.service';
 import { CheckInStopDto, ResumeJourneyDto } from '../dto/tracking.dto';
-import { NotificationType } from 'src/modules/notification/entities/notification.entity';
-import { NotificationsService } from 'src/modules/notification/notification.service';
+import { NotificationType } from '../../notification/entities/notification.entity';
+import { NotificationsService } from '../../notification/notification.service';
 
 @Injectable()
 export class JourneyTrackingService {
@@ -92,7 +92,7 @@ export class JourneyTrackingService {
             check_in_image: dto.check_in_image
             });
         }
-        
+
         const targetParticipants = stop.participant_ids && stop.participant_ids.length > 0 
         ? stop.participant_ids 
         : journey.members.map(m => m.user_id);

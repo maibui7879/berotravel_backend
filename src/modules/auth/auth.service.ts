@@ -12,7 +12,7 @@ import * as bcrypt from 'bcrypt';
 
 // Entities & Enums
 import { User, AuthProvider, SocialProfile } from '../users/entities/user.entity';
-import { Role } from 'src/common/constants';
+import { Role } from '../../common/constants';
 
 // DTOs
 import { CreateUserDto } from '../users/dto/create-user.dto';

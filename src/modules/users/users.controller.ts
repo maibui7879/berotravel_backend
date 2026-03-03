@@ -4,13 +4,13 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './services/users.service';
 import { UserProfileService } from './services/user-profile.service'; // [NEW] Import Service thống kê
 
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { RolesGuard } from 'src/common/guards/role.guard';
-import { AtGuard } from 'src/common/guards/at.guard';
-import { Role } from 'src/common/constants';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/role.guard';
+import { AtGuard } from '../../common/guards/at.guard';
+import { Role } from '../../common/constants';
 
 @ApiTags('Users')
 @ApiBearerAuth() 

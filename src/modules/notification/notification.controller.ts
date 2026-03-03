@@ -1,7 +1,7 @@
 import { Controller, Get, Patch, Param, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notification.service';
-import { GetCurrentUser } from 'src/common/decorators/get-current-user.decorator';
-import { AtGuard } from 'src/common/guards/at.guard';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { AtGuard } from '../../common/guards/at.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('Notifications')

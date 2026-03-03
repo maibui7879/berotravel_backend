@@ -1,4 +1,4 @@
-// src/modules/forum/forum.module.ts
+// ../../modules/forum/forum.module.ts
 
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
