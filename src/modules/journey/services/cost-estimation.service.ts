@@ -9,9 +9,6 @@ import { InventoryUnit } from '../../bookings/entities/inventory-unit.entity';
 import { Availability as AvailabilityEntity } from '../../bookings/entities/availability.entity';
 import { Place } from '../../places/entities/place.entity';
 
-// ============================================================================
-// CONFIGURATION & CONSTANTS
-// ============================================================================
 export const COST_RATES = {
   transportation: {
     DRIVING: 3000,          // VND/km (Xăng xe - Chia sẻ)
@@ -25,7 +22,7 @@ export const COST_RATES = {
   },
   activities: {
     SIGHTSEEING: 150000,
-    HOTEL: 0, // Chỉ tính tiền nếu book phòng
+    HOTEL: 0, 
     RESTAURANT: 0,
     HIKING: 200000,
     TOUR: 500000,

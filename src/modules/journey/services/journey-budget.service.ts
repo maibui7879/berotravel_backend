@@ -15,7 +15,6 @@ export class JourneyBudgetService {
       
       currentMemberIds.forEach(id => balances.set(id, { spent: 0, estimated: 0 }));
 
-      // 1. Duyệt qua các Stop
       journey.days.forEach(day => {
         day.stops.forEach(stop => {
           if (stop.is_prepaid || stop.status === StopStatus.SKIPPED) return;
@@ -33,24 +32,20 @@ export class JourneyBudgetService {
             const b = balances.get(uId);
             if (!b) return;
 
-            // Kiểm tra xem user này đã check-in cá nhân chưa
             const myCheckIn = stop.participant_checkins?.find(c => c.user_id === uId);
 
             if (myCheckIn) {
-              // Nếu đã check-in: Cộng vào spent (ưu tiên actual_cost cá nhân, nếu ko có thì dùng estimated)
               const finalSpent = myCheckIn.actual_cost !== undefined 
                 ? myCheckIn.actual_cost 
                 : estimatedPerPerson;
               b.spent += finalSpent;
             } else {
-              // Nếu chưa check-in: Luôn nằm ở mục estimated
               b.estimated += estimatedPerPerson;
             }
           });
         });
       });
 
-      // 2. Tính toán chi phí hệ thống (Phòng, Xe - Thường là Shared và mặc định Pending)
       const memberCountForEstimation = Math.max(journey.members?.length || 1, journey.planned_members_count || 1);
       const estimation = await this.costService.estimateJourneyBudget(
         journey._id.toString(),
@@ -63,7 +58,6 @@ export class JourneyBudgetService {
         estimation.transportation.filter(t => t.is_shared).reduce((s, i) => s + i.estimated_cost, 0)) / memberCountForEstimation
       );
 
-      // 3. Tổng hợp
       const memberBalances = Array.from(balances.entries()).map(([uId, val]) => ({
         user_id: uId,
         total_spent: Math.ceil(val.spent),
