@@ -15,6 +15,10 @@ import {
   PlaceEditRequest,
   EditRequestStatus,
 } from './entities/place-edit-request.entity';
+import {
+  PlaceClaimRequest,
+  ClaimRequestStatus,
+} from './entities/place-claim-request.entity';
 import { Role, PlaceStatus, UserActionType } from '../../common/constants';
 import { SearchPlaceDto, SortBy, SortOrder } from './dto/search-place.dto';
 import { CreatePlaceDto } from './dto/create-place.dto';
@@ -36,6 +40,8 @@ export class PlacesService {
     private readonly placeRepo: MongoRepository<Place>,
     @InjectRepository(PlaceEditRequest)
     private readonly editRequestRepo: MongoRepository<PlaceEditRequest>,
+    @InjectRepository(PlaceClaimRequest)
+    private readonly claimRequestRepo: MongoRepository<PlaceClaimRequest>,
     @InjectRepository(Journey)
     private readonly journeyRepo: MongoRepository<Journey>,
     private readonly userProfileService: UserProfileService,
@@ -368,5 +374,90 @@ export class PlacesService {
       { $set: { is_partner: false } } as any,
     );
     return { updatedCount: result.modifiedCount };
+  }
+
+  // ==========================================
+  // 5. CLAIM PLACE OWNERSHIP LOGIC
+  // ==========================================
+
+  // 1. Merchant gửi yêu cầu claim
+  async requestClaim(placeId: string, proofImages: string[], user: any) {
+    if (user.role !== Role.MERCHANT) {
+      throw new ForbiddenException('Chỉ tài khoản Merchant mới có thể xác nhận quyền sở hữu');
+    }
+
+    const place = await this.findOne(placeId);
+    if (place.ownerId) {
+      throw new BadRequestException('Địa điểm này đã có chủ sở hữu');
+    }
+
+    // Kiểm tra xem đã có yêu cầu nào đang chờ duyệt chưa
+    const existingRequest = await this.claimRequestRepo.findOne({
+      where: {
+        place_id: placeId,
+        status: ClaimRequestStatus.PENDING,
+      },
+    });
+    if (existingRequest) {
+      throw new BadRequestException('Đã có yêu cầu xác nhận cho địa điểm này đang được xử lý');
+    }
+
+    const claim = this.claimRequestRepo.create({
+      place_id: placeId,
+      user_id: user.sub,
+      business_proof: proofImages,
+      status: ClaimRequestStatus.PENDING,
+    });
+
+    return await this.claimRequestRepo.save(claim);
+  }
+
+  // 2. Admin duyệt yêu cầu claim
+  async approveClaim(claimId: string, adminUser: CurrentUser) {
+    if (adminUser.role !== Role.ADMIN) {
+      throw new ForbiddenException('Chỉ Admin mới có quyền duyệt');
+    }
+
+    const claim = await this.claimRequestRepo.findOne({
+      where: { _id: new ObjectId(claimId) },
+    });
+    if (!claim || claim.status !== ClaimRequestStatus.PENDING) {
+      throw new NotFoundException('Yêu cầu không hợp lệ hoặc đã được xử lý');
+    }
+
+    // Cập nhật thông tin chủ sở hữu cho địa điểm
+    await this.placeRepo.update(new ObjectId(claim.place_id), {
+      ownerId: claim.user_id,
+      is_partner: true,
+    } as any);
+
+    claim.status = ClaimRequestStatus.APPROVED;
+    return await this.claimRequestRepo.save(claim);
+  }
+
+  // 3. Admin từ chối yêu cầu claim
+  async rejectClaim(claimId: string, reason: string, adminUser: CurrentUser) {
+    if (adminUser.role !== Role.ADMIN) {
+      throw new ForbiddenException('Chỉ Admin mới có quyền thực hiện');
+    }
+
+    const claim = await this.claimRequestRepo.findOne({
+      where: { _id: new ObjectId(claimId) },
+    });
+    if (!claim) {
+      throw new NotFoundException('Yêu cầu không tồn tại');
+    }
+
+    claim.status = ClaimRequestStatus.REJECTED;
+    claim.admin_note = reason;
+    return await this.claimRequestRepo.save(claim);
+  }
+
+  // 4. Lấy danh sách yêu cầu claim chờ duyệt
+  async getPendingClaimRequests() {
+    return await this.claimRequestRepo.find({
+      where: { status: ClaimRequestStatus.PENDING },
+      order: { created_at: -1 } as any,
+    });
   }
 }

@@ -79,6 +79,41 @@ export class PlacesController {
     return this.placesService.rejectEditRequest(requestId, reason, user);
   }
 
+  // 6. Lấy danh sách yêu cầu CLAIM chờ duyệt
+  @Get('admin/pending-claims')
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'ADMIN: Lấy danh sách yêu cầu xác nhận chủ sở hữu chờ duyệt' })
+  getPendingClaimRequests() {
+    return this.placesService.getPendingClaimRequests();
+  }
+
+  // 7. Duyệt yêu cầu CLAIM
+  @Patch('admin/claims/:id/approve')
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'ADMIN: Chấp thuận yêu cầu xác nhận chủ sở hữu' })
+  approveClaim(
+    @Param('id') id: string,
+    @GetCurrentUser() admin: CurrentUser
+  ) {
+    return this.placesService.approveClaim(id, admin);
+  }
+
+  // 8. Từ chối yêu cầu CLAIM
+  @Patch('admin/claims/:id/reject')
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'ADMIN: Từ chối yêu cầu xác nhận chủ sở hữu' })
+  @ApiBody({ schema: { type: 'object', properties: { reason: { type: 'string' } } } })
+  rejectClaim(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @GetCurrentUser() admin: CurrentUser
+  ) {
+    return this.placesService.rejectClaim(id, reason, admin);
+  }
+
   // ================= PUBLIC / USER ENDPOINTS =================
 
   @Public()
@@ -100,6 +135,20 @@ export class PlacesController {
   @ApiOperation({ summary: 'Tạo địa điểm mới (User thường -> Pending)' })
   create(@Body() dto: CreatePlaceDto, @GetCurrentUser() user: CurrentUser) {
     return this.placesService.create(dto, user);
+  }
+
+  // Merchant claim ownership của địa điểm
+  @Post(':id/claim')
+  @Roles(Role.MERCHANT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Merchant: Gửi yêu cầu xác nhận chủ sở hữu địa điểm' })
+  @ApiBody({ schema: { type: 'object', properties: { business_proof: { type: 'array', items: { type: 'string' } } } } })
+  claimPlace(
+    @Param('id') id: string,
+    @Body('business_proof') proof: string[],
+    @GetCurrentUser() user: CurrentUser
+  ) {
+    return this.placesService.requestClaim(id, proof, user);
   }
 
   @Patch(':id')
