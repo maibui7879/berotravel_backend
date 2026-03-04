@@ -24,13 +24,16 @@ import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notification/notification.module'; 
 import { BookingsModule } from '../bookings/bookings.module';
 import { JourneyTrackingService } from './services/journey-tracking.service';
+import { ChatModule } from '../chat/chat.module';
+import { ChatMessage } from '../chat/entities/chat-message.entity';
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Journey, Place, InventoryUnit, Availability]),
+    TypeOrmModule.forFeature([Journey, Place, InventoryUnit, Availability, ChatMessage]),
     forwardRef(() => FriendModule),
     UsersModule,
     NotificationsModule,
-    BookingsModule 
+    BookingsModule,
+    ChatModule
   ],
   controllers: [JourneysController],
   providers: [

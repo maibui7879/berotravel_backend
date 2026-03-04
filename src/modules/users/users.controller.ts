@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body, Delete, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Body, Delete, Param, UseGuards, Post } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 import { UsersService } from './services/users.service';
@@ -11,6 +11,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/role.guard';
 import { AtGuard } from '../../common/guards/at.guard';
 import { Role } from '../../common/constants';
+import { CreateMerchantRequestDto } from './dto/create-merchant-request.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth() 
@@ -63,5 +64,16 @@ export class UsersController {
   @ApiOperation({ summary: 'Admin: Xóa người dùng theo ID' })
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
+  }
+
+  @Post('request-merchant')
+  @UseGuards(AtGuard) // Yêu cầu phải đăng nhập
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Gửi yêu cầu nâng cấp tài khoản lên Merchant kèm thông tin kinh doanh' })
+  requestMerchant(
+    @GetCurrentUser('sub') userId: string,
+    @Body() dto: CreateMerchantRequestDto,
+  ) {
+    return this.usersService.requestMerchantRole(userId, dto);
   }
 }

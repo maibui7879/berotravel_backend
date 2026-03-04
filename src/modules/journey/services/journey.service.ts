@@ -22,8 +22,17 @@ import { JourneyBudgetService } from './journey-budget.service';
 import { JourneyUtils } from './journey-utils';
 import { NotificationType } from '../../notification/entities/notification.entity';
 import { BookingsService } from '../../bookings/bookings.service';
+import { ChatMessage, MessageType } from 'src/modules/chat/entities/chat-message.entity';
 
-interface CurrentUser {
+export interface AlbumItem {
+  source: 'check-in' | 'chat';
+  url: string;
+  user_id: string;
+  created_at: Date;
+  location_note?: string;
+}
+
+export interface CurrentUser {
   sub: string;
   role: Role;
 }
@@ -33,7 +42,8 @@ export class JourneysService {
   constructor(
     @InjectRepository(Journey) private readonly journeyRepo: MongoRepository<Journey>,
     @InjectRepository(Place) private readonly placeRepo: MongoRepository<Place>,
-    
+    @InjectRepository(ChatMessage) private readonly chatMessageRepo: MongoRepository<ChatMessage>,
+
     private readonly accessService: JourneyAccessService,
     private readonly schedulerService: JourneySchedulerService,
     private readonly budgetService: JourneyBudgetService,
@@ -620,6 +630,52 @@ export class JourneysService {
 
     return { success: true, message: 'Đã rời khỏi hành trình thành công' };
   }
+
+  async getJourneyAlbum(journeyId: string): Promise<AlbumItem[]> {
+      const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+      if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+
+      // 2. Định nghĩa kiểu cho mảng album để tránh lỗi 'never'
+      const album: AlbumItem[] = [];
+
+      // Lấy ảnh check-in
+      journey.days.forEach(day => {
+        day.stops.forEach(stop => {
+          if (stop.participant_checkins) {
+            stop.participant_checkins.forEach(checkin => {
+              if (checkin.check_in_image) {
+                album.push({
+                  source: 'check-in',
+                  url: checkin.check_in_image,
+                  user_id: checkin.user_id,
+                  created_at: new Date(checkin.checked_in_at),
+                  location_note: stop.note
+                });
+              }
+            });
+          }
+        });
+      });
+
+      // 3. Lấy ảnh từ chat sử dụng chatMessageRepo đã được inject
+      const chatMessages = await this.chatMessageRepo.find({
+        where: { 
+          journey_id: journeyId,
+          type: MessageType.IMAGE // Đảm bảo bạn sử dụng đúng Enum Type của ChatMessage
+        }
+      });
+
+      chatMessages.forEach(msg => {
+        album.push({
+          source: 'chat',
+          url: msg.content,
+          user_id: msg.sender_id,
+          created_at: new Date(msg.created_at)
+        });
+      });
+
+      return album.sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
+    }
 
   private async notifyMembers(journey: Journey, actorId: string, actionText: string, dayNumber?: number, senderId?: string) {
     try {

@@ -316,6 +316,18 @@ export class JourneysController {
     return this.journeysService.removeMember(journeyId, memberId, userId);
   }
 
+  @Get(':id/album')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lấy toàn bộ ảnh check-in và ảnh chat của hành trình' })
+  async getAlbum(
+    @Param('id') id: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    // Kiểm tra quyền truy cập hành trình trước khi cho phép lấy album
+    await this.journeysService.findOne(id, userId); 
+    return this.journeysService.getJourneyAlbum(id);
+  }
+
   @Post(':id/leave')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Rời khỏi hành trình' })

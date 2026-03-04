@@ -9,13 +9,20 @@ import { Place } from '../places/entities/place.entity';
 import { UserProfileService } from './services/user-profile.service';
 import { UserProfileCronService } from './services/user-profile-cron.service';
 
+// 1. THÊM IMPORT MerchantRequest VÀ NotificationModule
+import { MerchantRequest } from './entities/merchant-request.entity';
+import { NotificationsModule } from '../notification/notification.module';
+
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    TypeOrmModule.forFeature([User, UserTravelProfile, Place]) // Đăng ký Entity
+    // 2. THÊM MerchantRequest VÀO ĐÂY
+    TypeOrmModule.forFeature([User, UserTravelProfile, Place, MerchantRequest]), 
+    // 3. THÊM NotificationModule VÀO ĐÂY
+    NotificationsModule
   ],
   controllers: [UsersController],
-  providers: [UsersService, UserProfileService, UserProfileCronService], // Đăng ký Service
-  exports: [UsersService, UserProfileService], // Export để module khác (Favorites, Tracking) dùng
+  providers: [UsersService, UserProfileService, UserProfileCronService],
+  exports: [UsersService, UserProfileService],
 })
 export class UsersModule {}

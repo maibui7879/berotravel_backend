@@ -1,11 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
-
+import { NotFoundException } from '@nestjs/common';
 import { Payment, Payout, PaymentStatus } from '../../payments/entities/payment.entity';
 import { Booking } from '../../bookings/entities/booking.entity';
 import { Auth } from '../../auth/entities/auth.entity';
 import { Place } from '../../places/entities/place.entity';
+import { NotificationType } from 'src/modules/notification/entities/notification.entity';
+import { NotificationsService } from 'src/modules/notification/notification.service';
+import { MerchantRequest, RequestStatus } from '../../users/entities/merchant-request.entity';
+import { Role } from '../../../common/constants';
+import { User } from '../../users/entities/user.entity';
+import { ObjectId } from 'mongodb';
 
 /**
  * Admin Dashboard Service
@@ -16,6 +22,7 @@ export class AdminDashboardService {
   private readonly logger = new Logger(AdminDashboardService.name);
 
   constructor(
+    
     @InjectRepository(Payment)
     private readonly paymentRepo: MongoRepository<Payment>,
     @InjectRepository(Payout)
@@ -26,6 +33,12 @@ export class AdminDashboardService {
     private readonly authRepo: MongoRepository<Auth>,
     @InjectRepository(Place)
     private readonly placeRepo: MongoRepository<Place>,
+    @InjectRepository(User)
+    private readonly userRepo: MongoRepository<User>,
+    @InjectRepository(MerchantRequest)
+    private readonly merchantRequestRepo: MongoRepository<MerchantRequest>,
+
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -351,6 +364,39 @@ export class AdminDashboardService {
     return stats;
   }
 
+  async approveMerchantRequest(requestId: string, adminId: string) {
+  const request = await this.merchantRequestRepo.findOne({ where: { _id: new ObjectId(requestId) } });
+  if (!request) throw new NotFoundException('Yêu cầu không tồn tại');
+
+  // 1. Cập nhật trạng thái yêu cầu
+  request.status = RequestStatus.APPROVED;
+  await this.merchantRequestRepo.save(request);
+
+  // 2. Nâng cấp Role cho User
+  const user = await this.userRepo.findOne({ where: { _id: new ObjectId(request.user_id) } });
+  if (user) {
+    user.role = Role.MERCHANT;
+    await this.userRepo.save(user);
+
+    // 3. Thông báo cho người dùng
+    this.notificationsService.createAndSend({
+      recipient_id: user._id.toString(),
+      sender_id: adminId,
+      type: NotificationType.SYSTEM,
+      title: 'Yêu cầu được phê duyệt',
+      message: `Chúc mừng! Bạn hiện đã là Merchant của BeroTravel.`,
+    });
+  }
+
+  return { success: true };
+}
+async getPendingMerchantRequests() {
+  return await this.merchantRequestRepo.find({
+    where: { status: RequestStatus.PENDING } as any,
+    order: { created_at: 'DESC' } as any,
+  });
+}
+
   // ============ HELPERS ============
 
   private async getTotalRevenue(): Promise<number> {
@@ -360,4 +406,6 @@ export class AdminDashboardService {
 
     return payments.reduce((sum, p) => sum + p.amount, 0);
   }
+
+
 }

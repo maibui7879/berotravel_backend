@@ -1,16 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { ObjectId } from 'mongodb';
 import { UpdateUserDto } from '../dto/update-user.dto';
-import { BadRequestException } from '@nestjs/common/exceptions';
 import { Role } from '../../../common/constants';
+import { NotificationType } from '../../notification/entities/notification.entity'; // Sửa lại đường dẫn relative cho chuẩn
+import { NotificationsService } from '../../notification/notification.service';
+import { MerchantRequest, RequestStatus } from '../entities/merchant-request.entity'; // 1. Import RequestStatus
+import { CreateMerchantRequestDto } from '../dto/create-merchant-request.dto'; // 2. Import DTO
+
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
-    private readonly userRepository: MongoRepository<User>,
+    private readonly userRepository: MongoRepository<User>, // Tên biến là userRepository
+    private readonly notificationsService: NotificationsService,
+    @InjectRepository(MerchantRequest)
+    private readonly merchantRequestRepo: MongoRepository<MerchantRequest>,
   ) {}
 
   // Lấy thông tin cá nhân
@@ -53,6 +60,36 @@ export class UsersService {
 
     return { success: true, message: `Đã nâng cấp user lên ${role}` };
   }
+
+  async requestMerchantRole(userId: string, dto: CreateMerchantRequestDto) {
+  // 1. Kiểm tra nếu đã là Merchant hoặc đã có yêu cầu đang chờ
+  const user = await this.userRepository.findOne({ where: { _id: new ObjectId(userId) } });
+  if (user?.role === Role.MERCHANT) throw new BadRequestException('Bạn đã là Merchant');
+
+  const existingRequest = await this.merchantRequestRepo.findOne({ 
+    where: { user_id: userId, status: RequestStatus.PENDING } 
+  });
+  if (existingRequest) throw new BadRequestException('Yêu cầu của bạn đang được xử lý');
+
+  // 2. Tạo yêu cầu mới
+  const request = this.merchantRequestRepo.create({
+    ...dto,
+    user_id: userId,
+  });
+  await this.merchantRequestRepo.save(request);
+
+  // 3. Thông báo cho Admin (Sử dụng NotificationsService)
+  this.notificationsService.createAndSend({
+    recipient_id: 'ADMIN_ID', // Hoặc lấy danh sách admin
+    sender_id: userId,
+    type: NotificationType.SYSTEM,
+    title: 'Yêu cầu Merchant mới',
+    message: `Người dùng ${user?.fullName} đã gửi thông tin kinh doanh cho thương hiệu ${dto.business_name}.`,
+    metadata: { request_id: request._id.toString() }
+  });
+
+  return { success: true, message: 'Thông tin kinh doanh đã được gửi để phê duyệt' };
+}
 
   async findOne(id: string): Promise<User> {
     if (!ObjectId.isValid(id)) throw new BadRequestException('ID không hợp lệ');

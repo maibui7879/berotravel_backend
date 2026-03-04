@@ -1,10 +1,12 @@
-import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Param, Patch } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AdminDashboardService } from './services/admin-dashboard.service';
 import { RolesGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AtGuard } from '../../common/guards/at.guard';
 import { Role } from '../../common/constants';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { Body } from '@nestjs/common/decorators';
 
 /**
  * Admin Dashboard Controller
@@ -131,5 +133,20 @@ export class AdminController {
       new Date(startDate),
       new Date(endDate),
     );
+  }
+  
+  @Get('merchant-requests/pending')
+  @ApiOperation({ summary: 'Lấy danh sách các yêu cầu nâng cấp Merchant đang chờ duyệt' })
+  getPendingMerchantRequests() {
+    return this.dashboardService.getPendingMerchantRequests();
+  }
+
+@Patch('merchant-requests/:id/approve')
+  @ApiOperation({ summary: 'Phê duyệt yêu cầu nâng cấp lên Merchant' })
+  approveMerchantRequest(
+    @Param('id') id: string,
+    @GetCurrentUser('sub') adminId: string,
+  ) {
+    return this.dashboardService.approveMerchantRequest(id, adminId);
   }
 }
