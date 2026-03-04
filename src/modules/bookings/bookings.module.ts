@@ -5,10 +5,13 @@ import { BookingsController } from './bookings.controller';
 import { Booking } from './entities/booking.entity';
 import { InventoryUnit } from './entities/inventory-unit.entity';
 import { Availability } from './entities/availability.entity';
+import { InventoryTransaction } from './entities/inventory-transaction.entity';
+import { Voucher } from './entities/voucher.entity';
+import { Promotion } from './entities/promotion.entity';
 import { Place } from '../places/entities/place.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Booking, InventoryUnit, Availability, Place])],
+  imports: [TypeOrmModule.forFeature([Booking, InventoryUnit, Availability, InventoryTransaction, Voucher, Promotion, Place])],
   controllers: [BookingsController],
   providers: [BookingsService],
   exports: [BookingsService],

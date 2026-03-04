@@ -17,6 +17,7 @@ import { NotificationsService } from '../../notification/notification.service';
 import { UsersService } from '../../../modules/users/services/users.service';
 import { UserProfileService } from '../../../modules/users/services/user-profile.service'; 
 import { JourneyAccessService } from './journey-access.service';
+import { JourneyPermissionService } from './journey-permission.service';
 import { JourneySchedulerService } from './journey-scheduler.service';
 import { JourneyBudgetService } from './journey-budget.service';
 import { JourneyUtils } from './journey-utils';
@@ -45,6 +46,7 @@ export class JourneysService {
     @InjectRepository(ChatMessage) private readonly chatMessageRepo: MongoRepository<ChatMessage>,
 
     private readonly accessService: JourneyAccessService,
+    private readonly permissionService: JourneyPermissionService,
     private readonly schedulerService: JourneySchedulerService,
     private readonly budgetService: JourneyBudgetService,
 
@@ -129,6 +131,9 @@ export class JourneysService {
   }
 
   async update(id: string, dto: UpdateJourneyDto, userId: string): Promise<Journey> {
+    // Permission check: VIEWER không được phép cập nhật journey
+    await this.permissionService.requireEditPermission(id, userId, 'Cập nhật thông tin hành trình');
+
     const journey = await this.accessService.getJourneyWithAccess(id, userId, 'EDIT');
     Object.assign(journey, dto);
 
@@ -198,6 +203,9 @@ export class JourneysService {
   }
 
   async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
+    // Permission check: VIEWER không được phép add stop
+    await this.permissionService.requireEditPermission(journeyId, userId, 'Thêm điểm dừng');
+
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     
     if (!ObjectId.isValid(dto.place_id)) {
@@ -345,6 +353,9 @@ export class JourneysService {
   dto: UpdateStopDto, 
   userId: string
 ): Promise<Journey> {
+  // Permission check: VIEWER không được phép cập nhật stop
+  await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nhật điểm dừng');
+
   const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
   const day = journey.days.find(d => d.id === dayId);
   if (!day) throw new NotFoundException('Không tìm thấy ngày này trong lịch trình');
@@ -390,6 +401,9 @@ export class JourneysService {
 }
 
   async moveStop(userId: string, dto: MoveStopDto): Promise<Journey> {
+    // Permission check: VIEWER không được phép di chuyển stop
+    await this.permissionService.requireEditPermission(dto.journey_id, userId, 'Di chuyển điểm dừng');
+
     const journey = await this.accessService.getJourneyWithAccess(dto.journey_id, userId, 'EDIT');
     const fromDay = journey.days.find(d => d.day_number === dto.from_day_number);
     const toDay = journey.days.find(d => d.day_number === dto.to_day_number);
@@ -409,6 +423,9 @@ export class JourneysService {
   }
 
   async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: string) {
+    // Permission check: VIEWER không được phép xóa stop
+    await this.permissionService.requireEditPermission(journeyId, userId, 'Xóa điểm dừng');
+
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     const day = journey.days.find(d => d.day_number === dayNumber);
     
@@ -676,6 +693,144 @@ export class JourneysService {
 
       return album.sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
     }
+
+  // ==========================================
+  // HOST TRANSFER & PERMISSION MANAGEMENT
+  // ==========================================
+
+  /**
+   * HOST chuyển quyền cho một MEMBER khác
+   * Yêu cầu:
+   * - Chỉ HOST mới có thể chuyển (owner_id)
+   * - Người nhận phải là MEMBER hoặc HOST
+   * - Không thể chuyển cho VIEWER
+   */
+  async transferHostTo(journeyId: string, newHostUserId: string, currentHostUserId: string): Promise<Journey> {
+    const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+    if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+
+    // 1. Kiểm tra hiện tại là HOST
+    if (journey.owner_id !== currentHostUserId) {
+      throw new ForbiddenException('Chỉ HOST (chủ chuyến đi) mới có thể chuyển quyền');
+    }
+
+    // 2. Kiểm tra user mới tồn tại và là member
+    const newHostMember = journey.members?.find(m => m.user_id === newHostUserId);
+    if (!newHostMember) {
+      throw new NotFoundException('Người dùng không phải là thành viên của hành trình');
+    }
+
+    // 3. Không thể chuyển cho VIEWER
+    if (newHostMember.role === JourneyMemberRole.VIEWER) {
+      throw new BadRequestException('Không thể chuyển quyền HOST cho VIEWER. Chỉ MEMBER hoặc những người không có role cụ thể mới có thể nhận.');
+    }
+
+    // 4. Không thể chuyển cho chính mình
+    if (newHostUserId === currentHostUserId) {
+      throw new BadRequestException('Bạn đã là HOST');
+    }
+
+    // 5. Chuyển quyền: Demote HOST cũ -> MEMBER, Promote MEMBER mới -> HOST
+    const oldHostMember = journey.members.find(m => m.user_id === currentHostUserId);
+    if (oldHostMember) {
+      oldHostMember.role = JourneyMemberRole.MEMBER;
+    }
+
+    newHostMember.role = JourneyMemberRole.HOST;
+    journey.owner_id = newHostUserId; // Cập nhật owner_id
+
+    await this.journeyRepo.save(journey);
+
+    // 6. Gửi notification
+    await this.notificationsService.createAndSend({
+      recipient_id: newHostUserId,
+      sender_id: currentHostUserId,
+      type: NotificationType.SYSTEM,
+      title: 'Quyền hạn thay đổi',
+      message: `Bạn đã được nâng lên làm HOST của hành trình "${journey.name}"`,
+      metadata: { journey_id: journey._id.toString() },
+    });
+
+    // Thông báo cho các member khác
+    await this.notifyMembers(
+      journey,
+      currentHostUserId,
+      `đã chuyển quyền HOST cho ${newHostUserId}`
+    );
+
+    return journey;
+  }
+
+  /**
+   * Lấy danh sách các member có thể nhận quyền HOST
+   * (Dùng khi HOST muốn chuyển quyền, show danh sách candidates)
+   */
+  async getHostCandidates(journeyId: string, currentHostUserId: string): Promise<JourneyMember[]> {
+    const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+    if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+
+    if (journey.owner_id !== currentHostUserId) {
+      throw new ForbiddenException('Chỉ HOST mới có thể xem danh sách ứng cử viên');
+    }
+
+    // Lọc: MEMBER hoặc HOST (không VIEWER), loại bỏ HOST hiện tại
+    return (journey.members || []).filter(m =>
+      m.user_id !== currentHostUserId &&
+      (m.role === JourneyMemberRole.MEMBER || m.role === JourneyMemberRole.HOST)
+    );
+  }
+
+  /**
+   * Thay đổi role của một member (chỉ HOST)
+   */
+  async changeMemberRole(
+    journeyId: string,
+    targetMemberId: string,
+    newRole: JourneyMemberRole,
+    currentHostUserId: string
+  ): Promise<Journey> {
+    const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+    if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+
+    // Chỉ HOST mới có thể thay đổi role
+    if (journey.owner_id !== currentHostUserId) {
+      throw new ForbiddenException('Chỉ HOST mới có quyền thay đổi role của thành viên');
+    }
+
+    // Không thể thay đổi role của chính mình
+    if (targetMemberId === currentHostUserId) {
+      throw new BadRequestException('Không thể thay đổi role của chính mình. Hãy chuyển quyền HOST trước.');
+    }
+
+    // Tìm member
+    const memberIdx = journey.members?.findIndex(m => m.user_id === targetMemberId);
+    if (memberIdx === undefined || memberIdx === -1) {
+      throw new NotFoundException('Thành viên không tồn tại');
+    }
+
+    const oldRole = journey.members[memberIdx].role;
+    journey.members[memberIdx].role = newRole;
+
+    await this.journeyRepo.save(journey);
+
+    // Notify
+    const roleText = {
+      [JourneyMemberRole.HOST]: 'HOST',
+      [JourneyMemberRole.MEMBER]: 'MEMBER',
+      [JourneyMemberRole.VIEWER]: 'VIEWER (Chỉ xem)',
+    }[newRole];
+
+    await this.notificationsService.createAndSend({
+      recipient_id: targetMemberId,
+      sender_id: currentHostUserId,
+      type: NotificationType.SYSTEM,
+      title: 'Role thay đổi',
+      message: `Role của bạn trong hành trình "${journey.name}" đã được thay đổi thành ${roleText}`,
+      metadata: { journey_id: journey._id.toString() },
+    });
+
+    return journey;
+  }
 
   private async notifyMembers(journey: Journey, actorId: string, actionText: string, dayNumber?: number, senderId?: string) {
     try {

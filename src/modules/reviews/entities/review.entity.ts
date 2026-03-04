@@ -25,6 +25,7 @@ export class Review {
   @Column('array', { default: [] }) images: string[];
   @Column({ default: 0 }) helpful_count: number;
   @Column({ nullable: true }) merchant_reply: string;
+  @Column({ nullable: true }) merchant_reply_at: Date; // Thời gian merchant phản hồi
   @Column({ default: false }) is_anonymous: boolean;
   @Column({ default: false }) is_verified: boolean; // True nếu đã từng booking COMPLETED
   @Column({ type: 'enum', enum: ReviewStatus, default: ReviewStatus.PUBLISHED }) status: ReviewStatus;

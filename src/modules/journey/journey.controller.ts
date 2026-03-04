@@ -19,6 +19,7 @@ import { CreateJoinRequestDto, ReplyJoinRequestDto } from './dto/social-journey.
 import { JoinJourneyDto, ManageMemberDto } from './dto/member-management.dto';
 import { MoveStopDto } from './dto/move-stop.dto';
 import { UpdateStopDto } from './dto/update-stop.dto';
+import { TransferHostDto, ChangeMemberRoleDto } from './dto/permission-management.dto';
 
 interface CurrentUser {
   sub: string;
@@ -327,12 +328,53 @@ export class JourneysController {
     await this.journeysService.findOne(id, userId); 
     return this.journeysService.getJourneyAlbum(id);
   }
-
   @Post(':id/leave')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Rời khỏi hành trình' })
   @ApiParam({ name: 'id', description: 'Journey ID' })
   leaveJourney(@Param('id') journeyId: string, @GetCurrentUser('sub') userId: string) {
     return this.journeysService.leaveJourney(journeyId, userId);
+  }
+
+  // ==========================================
+  // HOST TRANSFER & PERMISSION MANAGEMENT
+  // ==========================================
+
+  @Get(':id/members/host-candidates')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'HOST: Lấy danh sách các member có thể nhận quyền HOST' })
+  @ApiParam({ name: 'id', description: 'Journey ID' })
+  getHostCandidates(
+    @Param('id') journeyId: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.getHostCandidates(journeyId, userId);
+  }
+
+  @Post(':id/transfer-host/:memberId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'HOST: Chuyển quyền HOST cho một MEMBER khác trước khi rời chuyến' })
+  @ApiParam({ name: 'id', description: 'Journey ID' })
+  @ApiParam({ name: 'memberId', description: 'ID của member sẽ nhận quyền HOST' })
+  transferHostTo(
+    @Param('id') journeyId: string,
+    @Param('memberId') newHostId: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.transferHostTo(journeyId, newHostId, userId);
+  }
+
+  @Patch(':id/members/:memberId/role')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'HOST: Thay đổi role của thành viên (HOST/MEMBER/VIEWER)' })
+  @ApiParam({ name: 'id', description: 'Journey ID' })
+  @ApiParam({ name: 'memberId', description: 'ID của thành viên' })
+  changeMemberRole(
+    @Param('id') journeyId: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: any, // { role: 'HOST' | 'MEMBER' | 'VIEWER' }
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.changeMemberRole(journeyId, memberId, dto.role, userId);
   }
 }

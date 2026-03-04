@@ -10,6 +10,7 @@ import { CostEstimationService } from './services/cost-estimation.service';
 import { FriendModule } from '../friend/friend.module';
 // [FIX 1] Import các Sub-Services mới tách ra
 import { JourneyAccessService } from './services/journey-access.service';
+import { JourneyPermissionService } from './services/journey-permission.service';
 import { JourneySchedulerService } from './services/journey-scheduler.service';
 import { JourneyBudgetService } from './services/journey-budget.service';
 
@@ -41,13 +42,15 @@ import { ChatMessage } from '../chat/entities/chat-message.entity';
     CostEstimationService, 
     
     JourneyAccessService,
+    JourneyPermissionService,
     JourneySchedulerService,
     JourneyBudgetService,
     JourneyTrackingService,
   ],
   exports: [
     JourneysService, 
-    CostEstimationService
+    CostEstimationService,
+    JourneyPermissionService
   ],
 })
 export class JourneysModule {}

@@ -5,6 +5,9 @@ import { ObjectId } from 'mongodb';
 import { Booking } from './entities/booking.entity';
 import { InventoryUnit } from './entities/inventory-unit.entity';
 import { Availability } from './entities/availability.entity';
+import { InventoryTransaction, TransactionType } from './entities/inventory-transaction.entity';
+import { Voucher, VoucherStatus } from './entities/voucher.entity';
+import { Promotion, PromotionStatus } from './entities/promotion.entity';
 import { Place } from '../places/entities/place.entity';
 import { Role } from '../../common/constants';
 
@@ -14,6 +17,9 @@ export class BookingsService {
     @InjectRepository(Booking) private readonly bookingRepo: MongoRepository<Booking>,
     @InjectRepository(InventoryUnit) private readonly unitRepo: MongoRepository<InventoryUnit>,
     @InjectRepository(Availability) private readonly availRepo: MongoRepository<Availability>,
+    @InjectRepository(InventoryTransaction) private readonly transactionRepo: MongoRepository<InventoryTransaction>,
+    @InjectRepository(Voucher) private readonly voucherRepo: MongoRepository<Voucher>,
+    @InjectRepository(Promotion) private readonly promotionRepo: MongoRepository<Promotion>,
     @InjectRepository(Place) private readonly placeRepo: MongoRepository<Place>,
   ) {}
 
@@ -267,6 +273,306 @@ async create(dto: any, userId: string) {
         
         await this.availRepo.save(availability);
     }
+  }
+
+  // ==========================================
+  // INVENTORY MANAGEMENT (MERCHANT)
+  // ==========================================
+
+  // Cập nhật số lượng phòng/bàn trống theo ngày thực tế
+  async updateInventoryQuantity(
+    unitId: string,
+    quantity: number,
+    dateFrom: string,
+    dateTo?: string,
+    reason: string = 'MANUAL_UPDATE',
+    user?: any
+  ) {
+    const unit = await this.unitRepo.findOne({ where: { _id: new ObjectId(unitId) } });
+    if (!unit) throw new NotFoundException('Loại phòng/bàn không tồn tại');
+
+    // Kiểm quyền: Chỉ merchant chủ sở hữu hoặc admin
+    if (user && user.role !== Role.ADMIN) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(unit.place_id) } });
+      if (place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền quản lý kho này');
+    }
+
+    const startDate = new Date(new Date(dateFrom).setHours(0, 0, 0, 0));
+    const endDate = dateTo ? new Date(new Date(dateTo).setHours(0, 0, 0, 0)) : startDate;
+
+    const datesToUpdate: Date[] = [];
+    const tempDate = new Date(startDate);
+    while (tempDate <= endDate) {
+      datesToUpdate.push(new Date(tempDate));
+      tempDate.setDate(tempDate.getDate() + 1);
+    }
+
+    const transactions: InventoryTransaction[] = [];
+
+    for (const date of datesToUpdate) {
+      const avail = await this.availRepo.findOne({
+        where: { unit_id: unitId, date }
+      });
+
+      const currentQuantity = avail?.available_count || unit.total_inventory;
+      const quantityBefore = currentQuantity;
+      const quantityAfter = Math.max(0, Math.min(unit.total_inventory, currentQuantity + quantity));
+      const actualChange = quantityAfter - quantityBefore;
+
+      // Lưu Availability
+      if (avail) {
+        avail.available_count = quantityAfter;
+        await this.availRepo.save(avail);
+      } else {
+        await this.availRepo.save({
+          unit_id: unitId,
+          date,
+          available_count: quantityAfter,
+          booked_count: 0,
+        });
+      }
+
+      // Lưu Transaction
+      const transaction = this.transactionRepo.create({
+        place_id: unit.place_id,
+        unit_id: unitId,
+        transaction_type: quantity > 0 ? TransactionType.RESTOCK : TransactionType.ADJUSTMENT,
+        quantity_changed: actualChange,
+        quantity_before: quantityBefore,
+        quantity_after: quantityAfter,
+        date_from: date,
+        date_to: date,
+        merchant_id: user?.sub,
+        reason,
+      });
+
+      transactions.push(transaction);
+    }
+
+    await this.transactionRepo.insertMany(transactions);
+
+    return {
+      success: true,
+      message: `Cập nhật ${datesToUpdate.length} ngày thành công`,
+      transactions: transactions.length,
+    };
+  }
+
+  // Lấy lịch sử giao dịch kho
+  async getInventoryTransactions(placeId: string, unitId?: string, user?: any) {
+    if (user && user.role !== Role.ADMIN) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(placeId) } });
+      if (place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền');
+    }
+
+    const query: any = { place_id: placeId };
+    if (unitId) query.unit_id = unitId;
+
+    return await this.transactionRepo.find({
+      where: query,
+      order: { created_at: -1 } as any,
+    });
+  }
+
+  // ==========================================
+  // VOUCHER MANAGEMENT (MERCHANT)
+  // ==========================================
+
+  // Tạo mã giảm giá
+  async createVoucher(placeId: string, dto: any, user: any) {
+    if (user.role !== Role.MERCHANT && user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Chỉ Merchant và Admin mới có thể tạo voucher');
+    }
+
+    const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(placeId) } });
+    if (!place) throw new NotFoundException('Địa điểm không tồn tại');
+
+    if (user.role === Role.MERCHANT && place.ownerId !== user.sub) {
+      throw new ForbiddenException('Không có quyền quản lý voucher của địa điểm này');
+    }
+
+    // Kiểm tra mã unique
+    const existing = await this.voucherRepo.findOne({
+      where: { place_id: placeId, code: dto.code.toUpperCase() },
+    });
+    if (existing) throw new BadRequestException('Mã voucher đã tồn tại');
+
+    const voucher = this.voucherRepo.create({
+      ...dto,
+      place_id: placeId,
+      code: dto.code.toUpperCase(),
+      usage_count: 0,
+      status: VoucherStatus.ACTIVE,
+    });
+
+    return await this.voucherRepo.save(voucher);
+  }
+
+  // Lấy danh sách voucher của merchant
+  async getVouchers(placeId: string, user?: any) {
+    if (user && user.role === Role.MERCHANT) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(placeId) } });
+      if (place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền');
+    }
+
+    return await this.voucherRepo.find({
+      where: { place_id: placeId },
+      order: { created_at: -1 } as any,
+    });
+  }
+
+  // Cập nhật voucher
+  async updateVoucher(voucherId: string, dto: any, user?: any) {
+    const voucher = await this.voucherRepo.findOne({
+      where: { _id: new ObjectId(voucherId) },
+    });
+    if (!voucher) throw new NotFoundException('Voucher không tồn tại');
+
+    if (user && user.role === Role.MERCHANT) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(voucher.place_id) } });
+      if (place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền');
+    }
+
+    Object.assign(voucher, dto);
+    return await this.voucherRepo.save(voucher);
+  }
+
+  // Kiểm tra và áp dụng voucher
+  async validateVoucher(code: string, placeId: string, orderValue: number) {
+    const voucher = await this.voucherRepo.findOne({
+      where: { code: code.toUpperCase(), place_id: placeId },
+    });
+
+    if (!voucher) throw new NotFoundException('Mã giảm giá không tồn tại');
+    if (voucher.status !== VoucherStatus.ACTIVE) throw new BadRequestException('Mã giảm giá không còn hoạt động');
+
+    const now = new Date();
+    if (now < voucher.valid_from || now > voucher.valid_until) {
+      throw new BadRequestException('Mã giảm giá đã hết hạn');
+    }
+
+    if (voucher.min_order_value && orderValue < voucher.min_order_value) {
+      throw new BadRequestException(`Giá trị đơn hàng tối thiểu là ${voucher.min_order_value} VND`);
+    }
+
+    if (voucher.max_usage && voucher.usage_count >= voucher.max_usage) {
+      throw new BadRequestException('Mã giảm giá đã hết lượt sử dụng');
+    }
+
+    // Tính toán giảm giá
+    let discount = 0;
+    if (voucher.type === 'FIXED') {
+      discount = voucher.discount_value;
+    } else if (voucher.type === 'PERCENT') {
+      discount = Math.floor((orderValue * voucher.discount_value) / 100);
+      if (voucher.max_discount) {
+        discount = Math.min(discount, voucher.max_discount);
+      }
+    }
+
+    return {
+      voucher_id: voucher._id,
+      discount_amount: discount,
+      final_price: Math.max(0, orderValue - discount),
+    };
+  }
+
+  // ==========================================
+  // PROMOTION MANAGEMENT (MERCHANT)
+  // ==========================================
+
+  // Tạo chương trình khuyến mãi (Happy Hour, Flash Sale, v.v.)
+  async createPromotion(placeId: string, dto: any, user: any) {
+    if (user.role !== Role.MERCHANT && user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Chỉ Merchant và Admin mới có thể tạo chương trình khuyến mãi');
+    }
+
+    const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(placeId) } });
+    if (!place) throw new NotFoundException('Địa điểm không tồn tại');
+
+    if (user.role === Role.MERCHANT && place.ownerId !== user.sub) {
+      throw new ForbiddenException('Không có quyền tạo khuyến mãi cho địa điểm này');
+    }
+
+    const promotion = this.promotionRepo.create({
+      ...dto,
+      place_id: placeId,
+      status: PromotionStatus.DRAFT,
+      total_usage: 0,
+    });
+
+    return await this.promotionRepo.save(promotion);
+  }
+
+  // Lấy danh sách chương trình khuyến mãi
+  async getPromotions(placeId: string, user?: any) {
+    if (user && user.role === Role.MERCHANT) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(placeId) } });
+      if (place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền');
+    }
+
+    return await this.promotionRepo.find({
+      where: { place_id: placeId },
+      order: { created_at: -1 } as any,
+    });
+  }
+
+  // Kích hoạt/Vô hiệu hóa chương trình khuyến mãi
+  async togglePromotion(promotionId: string, status: PromotionStatus, user?: any) {
+    const promotion = await this.promotionRepo.findOne({
+      where: { _id: new ObjectId(promotionId) },
+    });
+    if (!promotion) throw new NotFoundException('Chương trình khuyến mãi không tồn tại');
+
+    if (user && user.role === Role.MERCHANT) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(promotion.place_id) } });
+      if (place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền');
+    }
+
+    promotion.status = status;
+    return await this.promotionRepo.save(promotion);
+  }
+
+  // Kiểm tra chương trình khuyến mãi đang áp dụng
+  async getActivePromotions(placeId: string, unitId?: string): Promise<Promotion[]> {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const hour = now.getHours();
+
+    const query: any = {
+      place_id: placeId,
+      status: PromotionStatus.ACTIVE,
+      valid_from: { $lte: now },
+      valid_until: { $gte: now },
+    };
+
+    const promotions = await this.promotionRepo.find({ where: query });
+
+    return promotions.filter((promo) => {
+      // Kiểm tra vế ngày hôm nay
+      if (promo.active_days.length > 0 && !promo.active_days.includes(dayOfWeek)) {
+        return false;
+      }
+
+      // Kiểm tra giờ (nếu là HAPPY_HOUR)
+      if (promo.type === 'HAPPY_HOUR' && promo.start_hour !== null && promo.end_hour !== null) {
+        if (hour < promo.start_hour || hour >= promo.end_hour) {
+          return false;
+        }
+      }
+
+      // Kiểm tra ngày loại trừ
+      if (promo.excluded_dates && promo.excluded_dates.some(d => d.toDateString() === now.toDateString())) {
+        return false;
+      }
+
+      // Kiểm tra Unit applicable
+      if (unitId && promo.applicable_units.length > 0 && !promo.applicable_units.includes(unitId)) {
+        return false;
+      }
+
+      return true;
+    });
   }
   
 }

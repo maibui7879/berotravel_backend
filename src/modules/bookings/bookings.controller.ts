@@ -99,4 +99,145 @@ export class BookingsController {
   cancel(@Param('id') id: string, @GetCurrentUser() user: any) {
     return this.bookingsService.cancel(id, user);
   }
+
+  // ==========================================
+  // INVENTORY MANAGEMENT (MERCHANT)
+  // ==========================================
+
+  @Patch('inventory/:unitId/update-quantity')
+  @Roles(Role.ADMIN, Role.MERCHANT)
+  @UseGuards(RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Merchant cập nhật số lượng phòng/bàn trống theo ngày (Real-time)' })
+  updateInventoryQuantity(
+    @Param('unitId') unitId: string,
+    @Body() dto: any, // { quantity, dateFrom, dateTo?, reason? }
+    @GetCurrentUser() user: any
+  ) {
+    return this.bookingsService.updateInventoryQuantity(
+      unitId,
+      dto.quantity,
+      dto.dateFrom,
+      dto.dateTo,
+      dto.reason || 'MANUAL_UPDATE',
+      user
+    );
+  }
+
+  @Get('inventory/:placeId/transactions')
+  @Roles(Role.ADMIN, Role.MERCHANT)
+  @UseGuards(RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xem lịch sử giao dịch kho (Inventory Transactions)' })
+  getInventoryTransactions(
+    @Param('placeId') placeId: string,
+    @Query('unitId') unitId?: string,
+    @GetCurrentUser() user?: any
+  ) {
+    return this.bookingsService.getInventoryTransactions(placeId, unitId, user);
+  }
+
+  // ==========================================
+  // VOUCHER MANAGEMENT (MERCHANT)
+  // ==========================================
+
+  @Post(':placeId/vouchers')
+  @Roles(Role.ADMIN, Role.MERCHANT)
+  @UseGuards(RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Merchant tạo mã giảm giá' })
+  createVoucher(
+    @Param('placeId') placeId: string,
+    @Body() dto: any,
+    @GetCurrentUser() user: any
+  ) {
+    return this.bookingsService.createVoucher(placeId, dto, user);
+  }
+
+  @Get(':placeId/vouchers')
+  @Roles(Role.ADMIN, Role.MERCHANT)
+  @UseGuards(RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xem danh sách voucher của địa điểm' })
+  getVouchers(
+    @Param('placeId') placeId: string,
+    @GetCurrentUser() user?: any
+  ) {
+    return this.bookingsService.getVouchers(placeId, user);
+  }
+
+  @Patch('vouchers/:voucherId')
+  @Roles(Role.ADMIN, Role.MERCHANT)
+  @UseGuards(RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cập nhật voucher' })
+  updateVoucher(
+    @Param('voucherId') voucherId: string,
+    @Body() dto: any,
+    @GetCurrentUser() user?: any
+  ) {
+    return this.bookingsService.updateVoucher(voucherId, dto, user);
+  }
+
+  @Post('vouchers/:code/validate')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Kiểm tra & áp dụng mã giảm giá' })
+  validateVoucher(
+    @Param('code') code: string,
+    @Body() dto: any, // { placeId, orderValue }
+  ) {
+    return this.bookingsService.validateVoucher(code, dto.placeId, dto.orderValue);
+  }
+
+  // ==========================================
+  // PROMOTION MANAGEMENT (MERCHANT)
+  // ==========================================
+
+  @Post(':placeId/promotions')
+  @Roles(Role.ADMIN, Role.MERCHANT)
+  @UseGuards(RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Merchant tạo chương trình khuyến mãi (Happy Hour, Flash Sale, v.v.)' })
+  createPromotion(
+    @Param('placeId') placeId: string,
+    @Body() dto: any,
+    @GetCurrentUser() user: any
+  ) {
+    return this.bookingsService.createPromotion(placeId, dto, user);
+  }
+
+  @Get(':placeId/promotions')
+  @Roles(Role.ADMIN, Role.MERCHANT)
+  @UseGuards(RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xem danh sách chương trình khuyến mãi' })
+  getPromotions(
+    @Param('placeId') placeId: string,
+    @GetCurrentUser() user?: any
+  ) {
+    return this.bookingsService.getPromotions(placeId, user);
+  }
+
+  @Patch('promotions/:promotionId/toggle')
+  @Roles(Role.ADMIN, Role.MERCHANT)
+  @UseGuards(RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Kích hoạt/Vô hiệu hóa chương trình khuyến mãi' })
+  togglePromotion(
+    @Param('promotionId') promotionId: string,
+    @Body() dto: any, // { status: 'ACTIVE' | 'PAUSED' | 'ENDED' }
+    @GetCurrentUser() user?: any
+  ) {
+    return this.bookingsService.togglePromotion(promotionId, dto.status, user);
+  }
+
+  @Public()
+  @Get(':placeId/promotions/active')
+  @ApiOperation({ summary: 'Lấy danh sách khuyến mãi đang áp dụng ngay bây giờ' })
+  getActivePromotions(
+    @Param('placeId') placeId: string,
+    @Query('unitId') unitId?: string
+  ) {
+    return this.bookingsService.getActivePromotions(placeId, unitId);
+  }
 }

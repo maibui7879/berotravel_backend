@@ -156,9 +156,55 @@ export class ReviewsService {
     return { success: true };
   }
 
-  async reply(id: string, content: string) {
-    await this.reviewRepo.update(new ObjectId(id), { merchant_reply: content });
-    return { success: true };
+  // Merchant phản hồi review (chỉ chủ sở hữu địa điểm)
+  async reply(id: string, content: string, user: any) {
+    const review = await this.reviewRepo.findOne({ where: { _id: new ObjectId(id) } });
+    if (!review) throw new NotFoundException('Không tìm thấy review');
+
+    if (user.role !== 'ADMIN') {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(review.place_id) } });
+      if (place?.ownerId !== user.sub) {
+        throw new ForbiddenException('Chỉ chủ sở hữu địa điểm mới có thể phản hồi review');
+      }
+    }
+
+    await this.reviewRepo.update(
+      new ObjectId(id),
+      {
+        merchant_reply: content,
+        merchant_reply_at: new Date(),
+      } as any
+    );
+
+    return {
+      success: true,
+      message: 'Phản hồi đã được gửi thành công',
+      reply_at: new Date(),
+    };
+  }
+
+  // Xóa phản hồi của merchant
+  async deleteReply(id: string, user: any) {
+    const review = await this.reviewRepo.findOne({ where: { _id: new ObjectId(id) } });
+    if (!review) throw new NotFoundException('Không tìm thấy review');
+    if (!review.merchant_reply) throw new BadRequestException('Review này chưa có phản hồi');
+
+    if (user.role !== 'ADMIN') {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(review.place_id) } });
+      if (place?.ownerId !== user.sub) {
+        throw new ForbiddenException('Chỉ chủ sở hữu địa điểm mới có thể xóa phản hồi');
+      }
+    }
+
+    await this.reviewRepo.update(
+      new ObjectId(id),
+      {
+        merchant_reply: null,
+        merchant_reply_at: null,
+      } as any
+    );
+
+    return { success: true, message: 'Phản hồi đã được xóa' };
   }
 
   async remove(id: string, user: any) {

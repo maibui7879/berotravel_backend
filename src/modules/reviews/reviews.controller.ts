@@ -65,11 +65,28 @@ export class ReviewsController {
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Chủ địa điểm phản hồi khách hàng' })
-  reply(@Param('id') id: string, @Body() dto: ReplyReviewDto) {
-    return this.reviewsService.reply(id, dto.content);
+  reply(
+    @Param('id') id: string,
+    @Body() dto: ReplyReviewDto,
+    @GetCurrentUser() user: any
+  ) {
+    return this.reviewsService.reply(id, dto.content, user);
   }
 
-  // 7. XÓA REVIEW (USER TỰ XÓA HOẶC ADMIN)
+  // 7. XÓA PHẢN HỒI
+  @Delete(':id/reply')
+  @Roles(Role.MERCHANT, Role.ADMIN)
+  @UseGuards(RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xóa phản hồi của chủ địa điểm' })
+  deleteReply(
+    @Param('id') id: string,
+    @GetCurrentUser() user: any
+  ) {
+    return this.reviewsService.deleteReply(id, user);
+  }
+
+  // 8. XÓA REVIEW (USER TỰ XÓA HOẶC ADMIN)
   @Delete(':id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Xóa review (User tự xóa hoặc Admin xóa)' })
