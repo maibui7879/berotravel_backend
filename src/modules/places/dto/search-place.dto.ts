@@ -1,12 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsNumber, IsEnum, Min } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsEnum, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PlaceCategory } from '../../../common/constants';
 
 export enum SortBy {
   RATING = 'rating',
   DISTANCE = 'distance',
-  CREATED_AT = 'createdAt'
+  CREATED_AT = 'createdAt',
+  CROWD_LEVEL = 'crowdLevel' // Thêm vào đây
 }
 
 export enum SortOrder {
@@ -65,4 +66,11 @@ export class SearchPlaceDto {
   @IsOptional() 
   @IsEnum(SortOrder) 
   sortOrder?: SortOrder = SortOrder.DESC;
+
+  @ApiPropertyOptional({ description: 'Lọc theo mức độ đông đúc tối đa' })
+  @IsOptional()
+  @Type(() => Number)
+  @Min(1)
+  @Max(5)
+  maxCrowd?: number;
 }

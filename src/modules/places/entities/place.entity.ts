@@ -43,6 +43,8 @@ export class Place {
   @Column({ nullable: true })
   priceLevel: number; 
 
+  @Column({ default: 3 }) // Mặc định là 3 (mức trung bình) như logic crawler
+  crowdLevel: number;
   // [FIX 3] Thay 'simple-array' thành 'array'
   @Column('array')
   tags: string[];
@@ -77,6 +79,10 @@ export class Place {
 
   @Column()
   createdBy: string;
+
+  @Column({ nullable: true, default: 0 })
+  @ApiProperty({ description: 'Giá tiền ước tính (VNĐ)' })
+  estimated_cost_vnd: number;
 
   @CreateDateColumn()
   createdAt: Date;

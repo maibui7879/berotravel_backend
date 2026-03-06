@@ -28,6 +28,9 @@ export const COST_RATES = {
     TOUR: 500000,
     ADVENTURE: 800000,
   },
+  accommodation: {
+    default: 500000, 
+  },
 };
 
 export interface AccommodationCost {
@@ -38,6 +41,7 @@ export interface AccommodationCost {
   nights: number;
   nightly_rate: number;
   subtotal: number;
+  is_estimated?: boolean; // True if using system default rate instead of actual unit pricing
 }
 
 export interface DiningCost {
@@ -71,7 +75,9 @@ export interface CostSummary {
   total_dining: number;
   total_activities: number;
   total_transportation: number;
-  grand_total: number;
+  subtotal: number; // Total before contingency
+  contingency_buffer: number; // 10% contingency buffer
+  grand_total: number; // Final total including contingency
   cost_per_person: number;
   currency: string;
 }
@@ -240,7 +246,7 @@ export class CostEstimationService {
         }
 
         const accCost = await this.calculateAccommodationCost(currentHotel.place_id, checkIn, checkOut);
-        if (accCost) accommodationCosts.push(accCost);
+        accommodationCosts.push(accCost);
     }
 
     // --- SUMMARY CALCULATION ---
@@ -268,17 +274,32 @@ export class CostEstimationService {
     placeId: string,
     checkIn: Date,
     checkOut: Date,
-  ): Promise<AccommodationCost | null> {
+  ): Promise<AccommodationCost> {
     const unit = await this.unitRepo.findOne({ where: { place_id: placeId } });
-    if (!unit) return null;
 
     const nights = Math.max(1, Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)));
-    
+
+    // If no InventoryUnit found, use system default rate
+    if (!unit) {
+      const defaultRate = COST_RATES.accommodation.default;
+      return {
+        unit_id: 'default',
+        unit_name: 'Giá ước tính hệ thống',
+        check_in: checkIn,
+        check_out: checkOut,
+        nights,
+        nightly_rate: defaultRate,
+        subtotal: defaultRate * nights,
+        is_estimated: true,
+      };
+    }
+
+    // Calculate price using actual unit data
     const avails = await this.availRepo.find({
       where: { unit_id: unit._id.toString(), date: { $gte: checkIn, $lt: checkOut } }
     });
 
-    let avgPrice = unit.base_price;
+    let avgPrice = unit.base_price || COST_RATES.accommodation.default;
     if (avails.length > 0) {
       const totalOverride = avails.reduce((sum, a) => sum + (a.price_override || unit.base_price), 0);
       avgPrice = totalOverride / avails.length;
@@ -292,6 +313,7 @@ export class CostEstimationService {
       nights,
       nightly_rate: Math.round(avgPrice),
       subtotal: Math.round(avgPrice * nights),
+      is_estimated: false,
     };
   }
 
@@ -314,7 +336,12 @@ export class CostEstimationService {
             if (hour < 11) mealType = 'breakfast';
             else if (hour >= 17) mealType = 'dinner';
 
-            estimate = COST_RATES.dining[cat]?.[mealType] || 100000;
+            let baseCost = COST_RATES.dining[cat]?.[mealType] || 100000;
+            
+            // Apply price level multiplier (1-4 scale)
+            const priceLevel = place.priceLevel || 1;
+            const multiplier = this.getPriceLevelMultiplier(priceLevel);
+            estimate = place.estimated_cost_vnd ? Math.round(place.priceLevel * multiplier) : Math.round(baseCost * multiplier);
         }
 
         const hour = parseInt((stop.start_time || '12:00').split(':')[0]);
@@ -346,17 +373,39 @@ export class CostEstimationService {
     const baseAct = act.reduce((s, i) => s + i.estimated_cost, 0);
     const totalAct = baseAct * members;
     const totalTrans = trans.reduce((s, i) => s + i.estimated_cost, 0);
-    const grandTotal = totalAcc + totalDining + totalAct + totalTrans;
+    
+    // Calculate subtotal before contingency
+    const subtotal = totalAcc + totalDining + totalAct + totalTrans;
+    
+    // Add 10% contingency buffer
+    const contingencyBuffer = Math.round(subtotal * 0.1);
+    const grandTotal = subtotal + contingencyBuffer;
 
     return {
       total_accommodation: totalAcc,
       total_dining: totalDining,
       total_activities: totalAct,
       total_transportation: totalTrans,
+      subtotal: subtotal,
+      contingency_buffer: contingencyBuffer,
       grand_total: grandTotal,
       cost_per_person: members > 0 ? Math.round(grandTotal / members) : 0,
       currency: 'VND'
     };
+  }
+
+  /**
+   * Get price level multiplier (1-4 scale)
+   * 1 = Budget (1.0x), 2 = Mid-range (1.2x), 3 = Upscale (1.5x), 4 = Luxury (2.0x)
+   */
+  private getPriceLevelMultiplier(priceLevel: number): number {
+    const multipliers: { [key: number]: number } = {
+      1: 1.0,    // Budget
+      2: 1.2,    // Mid-range
+      3: 1.5,    // Upscale
+      4: 2.0,    // Luxury
+    };
+    return multipliers[priceLevel] || 1.0;
   }
 
   private getDefaultActivityCost(cat: string): number {

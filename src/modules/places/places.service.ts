@@ -85,6 +85,7 @@ export class PlacesService {
         is_partner: isPartner,
         ownerId: ownerId,
         createdBy: user.sub,
+        estimated_cost_vnd: dto.estimated_cost_vnd || 0,
         status: PlaceStatus.PENDING, // Mọi địa điểm mới đều chờ Admin duyệt
       });
 
@@ -105,7 +106,7 @@ export class PlacesService {
   // ==========================================
   // 2. READ LOGIC (SEARCH ENGINE)
   // ==========================================
-  async findAll(query: SearchPlaceDto, userId?: string) {
+async findAll(query: SearchPlaceDto, userId?: string) {
     const {
       name,
       category,
@@ -117,6 +118,7 @@ export class PlacesService {
       radius,
       sortBy,
       sortOrder,
+      maxCrowd,   // Bổ sung maxCrowd từ SearchPlaceDto
     } = query;
 
     if (userId && name) {
@@ -129,7 +131,7 @@ export class PlacesService {
     const order = sortOrder === SortOrder.DESC ? -1 : 1;
     const pipeline: any[] = [];
 
-    // 1. GeoNear (Phải đứng đầu pipeline)
+    // 1. GeoNear (Phải đứng đầu pipeline nếu có tọa độ)
     if (lat !== undefined && lng !== undefined) {
       pipeline.push({
         $geoNear: {
@@ -172,7 +174,18 @@ export class PlacesService {
       pipeline.push({ $match: { category } });
     }
 
+    // --- MỚI: Logic lọc theo Crowd Level ---
+    // Tìm các địa điểm có độ đông đúc nhỏ hơn hoặc bằng mức yêu cầu
+    if (maxCrowd !== undefined) {
+      pipeline.push({
+        $match: { 
+          crowdLevel: { $lte: Number(maxCrowd) } 
+        }
+      });
+    }
+
     // 3. Sorting
+    // Logic này tự động xử lý được sortBy: 'crowdLevel' nếu SortBy enum đã có field này
     if (sortField === SortBy.DISTANCE && lat !== undefined) {
       pipeline.push({ $sort: { distance: order } });
     } else {
@@ -202,7 +215,9 @@ export class PlacesService {
         },
       };
     } catch (error) {
-      throw new InternalServerErrorException('Lỗi database khi tìm kiếm');
+      // Log lỗi chi tiết để debug dễ hơn
+      console.error('Aggregate Error:', error);
+      throw new InternalServerErrorException('Lỗi database khi tìm kiếm địa điểm');
     }
   }
 
