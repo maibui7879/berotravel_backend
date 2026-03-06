@@ -176,7 +176,13 @@ export class CostEstimationService {
 
             if (stop.is_manual_cost) {
                finalCost = stop.estimated_cost;
-            } else {
+               
+            } 
+            else if (place.estimated_cost_vnd && place.estimated_cost_vnd > 0) {
+        finalCost = place.estimated_cost_vnd;
+      }
+            else {
+              
                finalCost = this.getDefaultActivityCost(place.category);
             }
 
@@ -341,7 +347,7 @@ export class CostEstimationService {
             // Apply price level multiplier (1-4 scale)
             const priceLevel = place.priceLevel || 1;
             const multiplier = this.getPriceLevelMultiplier(priceLevel);
-            estimate = place.estimated_cost_vnd ? Math.round(place.priceLevel * multiplier) : Math.round(baseCost * multiplier);
+            estimate = place.estimated_cost_vnd ? COST_RATES.dining[cat]?.[mealType] : Math.round(baseCost * multiplier);
         }
 
         const hour = parseInt((stop.start_time || '12:00').split(':')[0]);
