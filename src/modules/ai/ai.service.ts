@@ -1,4 +1,3 @@
-// src/modules/ai/ai.service.ts
 import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
@@ -8,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { AiProposal } from './entities/ai-proposal.entity';
 import { Journey, StopStatus } from '../journey/entities/journey.entity';
+import { RequestAiPlanDto } from './dto/request-ai-plan.dto';
 
 @Injectable()
 export class AiService {
@@ -19,15 +19,16 @@ export class AiService {
     private httpService: HttpService,
     private configService: ConfigService,
   ) {
-    // Sửa lỗi: Cung cấp chuỗi rỗng nếu không tìm thấy biến môi trường
-    this.aiUrl = this.configService.get<string>('AI_SERVICE_URL') || 'http://localhost:8000';
+    this.aiUrl = this.configService.get<string>('AI_SERVICE_URL') || 'http://localhost:8000/api/v1';
   }
 
-  // Đổi tên hàm để khớp với Controller (Sửa lỗi TS2339)
-  async generateAndSaveProposal(journeyId: string, userId: string, body: any) {
+  async generateAndSaveProposal(journeyId: string, userId: string, dto: RequestAiPlanDto) {
     try {
       const response = await firstValueFrom(
-        this.httpService.post(`${this.aiUrl}/journeys/${journeyId}/ai-plan`, body)
+        this.httpService.post(`${this.aiUrl}/journeys/${journeyId}/ai-plan`, {
+          ...dto,
+          requester_user_id: userId
+        })
       );
       const data = response.data;
 
@@ -44,27 +45,26 @@ export class AiService {
 
       return await this.proposalRepo.save(proposal);
     } catch (e) {
-      throw new InternalServerErrorException('Lỗi kết nối AI: ' + e.message);
+      throw new InternalServerErrorException('AI Service error: ' + (e.response?.data?.detail || e.message));
     }
   }
 
   async getProposalDetails(id: string) {
     const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(id) } });
-    if (!proposal) throw new NotFoundException('Bản nháp AI không tồn tại');
+    if (!proposal) throw new NotFoundException('AI Proposal not found');
     return proposal;
   }
 
   async acceptProposal(proposalId: string) {
     const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(proposalId) } });
-    if (!proposal) throw new NotFoundException('Bản nháp không tồn tại');
+    if (!proposal) throw new NotFoundException('Proposal not found');
 
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(proposal.journey_id) } });
-    if (!journey) throw new NotFoundException('Hành trình chính không tồn tại');
+    if (!journey) throw new NotFoundException('Journey not found');
 
-    // Sửa lỗi TS2322: Ép kiểu as any[] để vượt qua kiểm tra DeepPartial Entity của TypeORM
     const mappedDays: any[] = proposal.days.map((aiDay) => {
       let currentTime = new Date(aiDay.date);
-      currentTime.setHours(8, 0, 0, 0);
+      currentTime.setHours(8, 0, 0, 0); // Start at 8 AM
 
       return {
         id: new ObjectId().toString(),
@@ -84,11 +84,11 @@ export class AiService {
             start_time: startTime,
             end_time: endTime,
             estimated_cost: s.estimated_cost_vnd,
-            is_manual_cost: true,
+            is_manual_cost: true, // Freeze price to match AI calculation
             status: StopStatus.PENDING,
             participant_checkins: [],
             transit_from_previous: idx === 0 ? null : {
-              mode: 'DRIVING' as any, // Ép kiểu literal
+              mode: 'DRIVING' as any,
               distance_km: s.distance_from_previous_km,
               duration_minutes: s.travel_time_from_previous_minutes,
               from_place_id: aiDay.stops[idx - 1].place_id
@@ -98,14 +98,13 @@ export class AiService {
       };
     });
 
-    // Ép kiểu as any cho object update để tránh lỗi cấu trúc phức tạp (Sửa lỗi tại dòng 101)
     await this.journeyRepo.update(journey._id, {
       days: mappedDays,
       total_budget: proposal.days.reduce((sum, d) => sum + (d.total_estimated_cost_vnd || 0), 0),
       updated_at: new Date(),
     } as any);
 
-    return { success: true, message: 'Đã cập nhật lịch trình từ AI' };
+    return { success: true, message: 'Itinerary updated from AI proposal' };
   }
 
   private formatHHmm(date: Date): string {

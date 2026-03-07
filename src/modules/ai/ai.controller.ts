@@ -1,28 +1,38 @@
-// src/modules/ai/ai.controller.ts
-import { Controller, Post, Get, Body, Param } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
 import { AiService } from './ai.service';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { AtGuard } from '../../common/guards/at.guard';
+import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { RequestAiPlanDto } from './dto/request-ai-plan.dto';
 
-@ApiTags('ai planning')
+@ApiTags('AI Planning')
 @Controller('ai/planning')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 
   @Post('plan/:journeyId')
-  @ApiOperation({ summary: 'Yêu cầu AI lập kế hoạch và lưu bản nháp' })
-  async createPlan(@Param('journeyId') journeyId: string, @Body() body: any) {
-    return this.aiService.generateAndSaveProposal(journeyId, body.requester_user_id, body);
+  @UseGuards(AtGuard) 
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Yêu cầu AI lập kế hoạch hành trình (Lấy ID từ Token)' })
+  async createPlan(
+    @Param('journeyId') journeyId: string, 
+    @GetCurrentUser('sub') userId: string, 
+    @Body() dto: RequestAiPlanDto,
+  ) {
+    return this.aiService.generateAndSaveProposal(journeyId, userId, dto);
   }
 
   @Get('proposal/:id')
-  @ApiOperation({ summary: 'Lấy chi tiết bản nháp AI cho FE hiển thị' })
+  @ApiOperation({ summary: 'Get full draft details for FE display' })
   async getProposal(@Param('id') id: string) {
-    return this.aiService.getProposalDetails(id);
+    return await this.aiService.getProposalDetails(id);
   }
 
   @Post('accept/:proposalId')
-  @ApiOperation({ summary: 'Chấp nhận bản nháp AI và cập nhật vào hành trình' })
+  @UseGuards(AtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Accept AI proposal and update main journey' })
   async accept(@Param('proposalId') proposalId: string) {
-    return this.aiService.acceptProposal(proposalId);
+    return await this.aiService.acceptProposal(proposalId);
   }
 }
