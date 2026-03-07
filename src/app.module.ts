@@ -20,6 +20,7 @@ import { LoggerModule } from './common/logger/logger.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { HttpLoggerMiddleware } from './common/logger/http-logger.middleware';
 import { ForumModule } from './modules/forum/forum.module';
+import { AiModule } from './modules/ai/ai.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { ForumModule } from './modules/forum/forum.module';
     PaymentsModule,
     AdminModule,
     ForumModule,
+    AiModule,
   ],
 })
 export class AppModule implements NestModule {
