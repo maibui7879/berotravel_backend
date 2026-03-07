@@ -1,3 +1,4 @@
+// src/modules/ai/ai.service.ts
 import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
@@ -20,9 +21,13 @@ export class AiService {
     private httpService: HttpService,
     private configService: ConfigService,
   ) {
+    // Trỏ đến URL của AI service (Port 8000)
     this.aiUrl = this.configService.get<string>('AI_SERVICE_URL') || 'http://localhost:8000/api/v1';
   }
 
+  /**
+   * Gọi AI để lập kế hoạch và lưu thành một bản nháp có cấu trúc
+   */
   async generateAndSaveProposal(journeyId: string, userId: string, dto: RequestAiPlanDto) {
     try {
       const response = await firstValueFrom(
@@ -33,6 +38,7 @@ export class AiService {
       );
       const data = response.data;
 
+      // Tạo bản nháp lưu đầy đủ metadata từ AI trả về
       const proposal = this.proposalRepo.create({
         journey_id: journeyId,
         user_id: userId,
@@ -50,59 +56,63 @@ export class AiService {
     }
   }
 
+  /**
+   * Lấy chi tiết bản nháp
+   */
   async getProposalDetails(id: string) {
     const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(id) } });
-    if (!proposal) throw new NotFoundException('AI Proposal not found');
+    if (!proposal) throw new NotFoundException('Không tìm thấy bản nháp AI');
     return proposal;
   }
 
+  /**
+   * Lấy danh sách các bản nháp của một hành trình (theo thứ tự mới nhất)
+   */
   async getProposalsByJourney(journeyId: string) {
-    const proposals = await this.proposalRepo.find({ 
+    return await this.proposalRepo.find({ 
       where: { journey_id: journeyId },
       order: { createdAt: -1 }
     });
-    return proposals;
   }
 
+  /**
+   * Xóa bản nháp
+   */
   async deleteProposal(id: string) {
     const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(id) } });
-    if (!proposal) throw new NotFoundException('AI Proposal not found');
+    if (!proposal) throw new NotFoundException('Không tìm thấy bản nháp AI');
 
-    const result = await this.proposalRepo.delete(proposal._id);
-    
-    if (result.affected === 0) {
-      throw new NotFoundException('Failed to delete AI Proposal');
-    }
-
-    return { success: true, message: 'AI Proposal deleted successfully' };
+    await this.proposalRepo.delete(proposal._id);
+    return { success: true, message: 'Đã xóa bản nháp thành công' };
   }
 
+  /**
+   * Cho phép chỉnh sửa (fine-tune) trực tiếp trên bản nháp
+   */
   async updateProposal(id: string, updateData: UpdateAiProposalDto) {
     const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(id) } });
-    if (!proposal) throw new NotFoundException('AI Proposal not found');
+    if (!proposal) throw new NotFoundException('Không tìm thấy bản nháp AI');
 
-    // Cập nhật các field được phép
+    // 1. Cập nhật các trường cơ bản
     if (updateData.mood_used) proposal.mood_used = updateData.mood_used;
     if (updateData.planning_notes) proposal.planning_notes = updateData.planning_notes;
 
-    // Cập nhật mảng days nếu có
+    // 2. Cập nhật dữ liệu ngày và điểm dừng (Fine-tuning)
     if (updateData.days && Array.isArray(updateData.days)) {
       proposal.days = proposal.days.map((existingDay, dayIdx) => {
         const updateDay = updateData.days?.[dayIdx];
         if (!updateDay) return existingDay;
 
-        // Cập nhật thông tin cơ bản của ngày
         if (updateDay.day_number) existingDay.day_number = updateDay.day_number;
         if (updateDay.date) existingDay.date = new Date(updateDay.date);
         if (updateDay.summary) existingDay.summary = updateDay.summary;
 
-        // Cập nhật mảng stops
         if (updateDay.stops && Array.isArray(updateDay.stops)) {
           existingDay.stops = existingDay.stops.map((existingStop, stopIdx) => {
             const updateStop = updateDay.stops?.[stopIdx];
             if (!updateStop) return existingStop;
 
-            // Cập nhật các field cho phép fine-tune
+            // Chỉ cập nhật những trường được phép sửa đổi thủ công
             if (updateStop.place_id) existingStop.place_id = updateStop.place_id;
             if (updateStop.place_name) existingStop.place_name = updateStop.place_name;
             if (updateStop.estimated_duration_minutes !== undefined) {
@@ -112,121 +122,75 @@ export class AiService {
               existingStop.estimated_cost_vnd = updateStop.estimated_cost_vnd;
             }
             if (updateStop.order !== undefined) existingStop.order = updateStop.order;
-            if (updateStop.reason) existingStop.reason = updateStop.reason;
-            if (updateStop.final_score !== undefined) existingStop.final_score = updateStop.final_score;
-            if (updateStop.latitude !== undefined) existingStop.latitude = updateStop.latitude;
-            if (updateStop.longitude !== undefined) existingStop.longitude = updateStop.longitude;
-            if (updateStop.category) existingStop.category = updateStop.category;
 
             return existingStop;
           });
         }
 
-        // Tính lại tổng giá cho ngày nếu có cập nhật stops
-        if (updateDay.stops) {
-          existingDay.total_estimated_cost_vnd = existingDay.stops.reduce(
-            (sum, stop) => sum + (stop.estimated_cost_vnd || 0),
-            0
-          );
-        }
+        // Tính lại tổng tiền của ngày sau khi sửa giá từng điểm
+        existingDay.total_estimated_cost_vnd = existingDay.stops.reduce(
+          (sum, stop) => sum + (stop.estimated_cost_vnd || 0), 0
+        );
 
         return existingDay;
       });
     }
 
-    // Tính lại tổng ngân sách toàn bộ
+    // 3. Tính lại tổng ngân sách toàn chuyến đi
     proposal.total_budget_vnd = proposal.days.reduce(
-      (sum, day) => sum + (day.total_estimated_cost_vnd || 0),
-      0
+      (sum, day) => sum + (day.total_estimated_cost_vnd || 0), 0
     );
 
-    // TODO: Nếu người dùng đổi điểm (place_id changed), cần gọi endpoint improve-route-order
-    // của AI service để tính lại quãng đường và thời gian di chuyển
-    // if (updateData.needRouteUpdate) {
-    //   await this.recalculateRouteWithAi(proposal);
-    // }
-
-    // Lưu lại proposal sau khi cập nhật
     return await this.proposalRepo.save(proposal);
   }
 
-  // 1. Lấy giải thích từ AI
-  async getAiExplanation(journeyId: string) {
-    try {
-      const response = await firstValueFrom(
-        this.httpService.get(`${this.aiUrl}/journeys/${journeyId}/ai-explain`)
-      );
-      return response.data;
-    } catch (e) {
-      throw new InternalServerErrorException('AI Service error: ' + (e.response?.data?.detail || e.message));
-    }
-  }
-
-  // 2. Tối ưu lại thứ tự di chuyển trong ngày (Optimize Route)
-  async optimizeDayRoute(journeyId: string, dayNumber: number) {
-    try {
-      const response = await firstValueFrom(
-        this.httpService.post(`${this.aiUrl}/journeys/${journeyId}/days/${dayNumber}/improve-route-order`, {})
-      );
-      return response.data; // AI sẽ trả về mảng stops đã sắp xếp lại
-    } catch (e) {
-      throw new InternalServerErrorException('AI Service error: ' + (e.response?.data?.detail || e.message));
-    }
-  }
-
-  // 3. Đổi địa điểm trong bản nháp (Swap Place)
+  /**
+   * Đổi một địa điểm trong bản nháp lấy một địa điểm dự phòng (Candidate Pool)
+   */
   async swapPlaceInProposal(proposalId: string, dayNumber: number, oldPlaceId: string, newPlaceId: string) {
     const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(proposalId) } });
     if (!proposal) throw new NotFoundException('Bản nháp không tồn tại');
 
-    // Tìm điểm mới trong candidate_pool
     const newPlace = proposal.candidate_pool.find(p => p.place_id === newPlaceId);
     if (!newPlace) throw new NotFoundException('Địa điểm mới không có trong danh sách dự phòng');
 
-    // Tìm và thay thế trong mảng days
     const dayIndex = proposal.days.findIndex(d => d.day_number === dayNumber);
-    if (dayIndex > -1) {
-      const stopIndex = proposal.days[dayIndex].stops.findIndex(s => s.place_id === oldPlaceId);
-      if (stopIndex > -1) {
-        // Cập nhật stop (giữ nguyên order, chỉ thay place và thông tin giá)
-        proposal.days[dayIndex].stops[stopIndex] = {
-          ...proposal.days[dayIndex].stops[stopIndex],
-          place_id: newPlace.place_id,
-          place_name: newPlace.place_name,
-          estimated_cost_vnd: newPlace.estimated_cost_vnd,
-          category: newPlace.category,
-          reason: 'Người dùng tự đổi từ danh sách dự phòng'
-        };
-        
-        // Cập nhật lại tổng tiền của ngày đó
-        proposal.days[dayIndex].total_estimated_cost_vnd = proposal.days[dayIndex].stops
-          .reduce((sum, s) => sum + s.estimated_cost_vnd, 0);
-      } else {
-        throw new NotFoundException(`Địa điểm cũ "${oldPlaceId}" không tìm thấy trong ngày ${dayNumber}`);
-      }
-    } else {
-      throw new NotFoundException(`Ngày ${dayNumber} không tìm thấy trong bản nháp`);
-    }
+    if (dayIndex === -1) throw new NotFoundException(`Không tìm thấy ngày ${dayNumber}`);
 
-    // Tính lại tổng ngân sách toàn bộ
-    proposal.total_budget_vnd = proposal.days.reduce(
-      (sum, day) => sum + (day.total_estimated_cost_vnd || 0),
-      0
-    );
+    const stopIndex = proposal.days[dayIndex].stops.findIndex(s => s.place_id === oldPlaceId);
+    if (stopIndex === -1) throw new NotFoundException(`Không tìm thấy địa điểm cũ trong ngày này`);
+
+    // Thực hiện thay thế dữ liệu
+    proposal.days[dayIndex].stops[stopIndex] = {
+      ...proposal.days[dayIndex].stops[stopIndex],
+      place_id: newPlace.place_id,
+      place_name: newPlace.place_name,
+      estimated_cost_vnd: newPlace.estimated_cost_vnd,
+      category: newPlace.category,
+      reason: 'Đã thay đổi từ danh sách gợi ý'
+    };
+    
+    // Cập nhật lại các mốc ngân sách
+    proposal.days[dayIndex].total_estimated_cost_vnd = proposal.days[dayIndex].stops.reduce((sum, s) => sum + s.estimated_cost_vnd, 0);
+    proposal.total_budget_vnd = proposal.days.reduce((sum, d) => sum + d.total_estimated_cost_vnd, 0);
 
     return await this.proposalRepo.save(proposal);
   }
 
+  /**
+   * Chốt bản nháp: Map dữ liệu AI sang Journey thật và bật cờ is_manual_cost
+   */
   async acceptProposal(proposalId: string) {
     const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(proposalId) } });
-    if (!proposal) throw new NotFoundException('Proposal not found');
+    if (!proposal) throw new NotFoundException('Không tìm thấy bản nháp');
 
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(proposal.journey_id) } });
-    if (!journey) throw new NotFoundException('Journey not found');
+    if (!journey) throw new NotFoundException('Hành trình chính không tồn tại');
 
+    // Chuyển đổi cấu trúc AiProposal.Day sang Journey.Day
     const mappedDays: any[] = proposal.days.map((aiDay) => {
       let currentTime = new Date(aiDay.date);
-      currentTime.setHours(8, 0, 0, 0); // Start at 8 AM
+      currentTime.setHours(8, 0, 0, 0); // Mặc định bắt đầu lúc 8h sáng
 
       return {
         id: new ObjectId().toString(),
@@ -237,7 +201,7 @@ export class AiService {
           currentTime.setMinutes(currentTime.getMinutes() + s.estimated_duration_minutes);
           const endTime = this.formatHHmm(currentTime);
           
-          currentTime.setMinutes(currentTime.getMinutes() + s.travel_time_from_previous_minutes);
+          currentTime.setMinutes(currentTime.getMinutes() + (s.travel_time_from_previous_minutes || 0));
 
           return {
             _id: new ObjectId().toString(),
@@ -246,13 +210,13 @@ export class AiService {
             start_time: startTime,
             end_time: endTime,
             estimated_cost: s.estimated_cost_vnd,
-            is_manual_cost: true, // Freeze price to match AI calculation
+            is_manual_cost: true, // QUAN TRỌNG: Khóa giá để backend không tự tính lại
             status: StopStatus.PENDING,
             participant_checkins: [],
             transit_from_previous: idx === 0 ? null : {
               mode: 'DRIVING' as any,
-              distance_km: s.distance_from_previous_km,
-              duration_minutes: s.travel_time_from_previous_minutes,
+              distance_km: s.distance_from_previous_km || 0,
+              duration_minutes: s.travel_time_from_previous_minutes || 0,
               from_place_id: aiDay.stops[idx - 1].place_id
             }
           };
@@ -260,13 +224,30 @@ export class AiService {
       };
     });
 
+    // Cập nhật hành trình chính
     await this.journeyRepo.update(journey._id, {
       days: mappedDays,
-      total_budget: proposal.days.reduce((sum, d) => sum + (d.total_estimated_cost_vnd || 0), 0),
+      total_budget: proposal.total_budget_vnd,
       updated_at: new Date(),
     } as any);
 
-    return { success: true, message: 'Itinerary updated from AI proposal' };
+    return { success: true, message: 'Hành trình đã được cập nhật từ AI' };
+  }
+
+  /**
+   * Proxy lấy giải thích thuật toán từ AI
+   */
+  async getAiExplanation(journeyId: string) {
+    const response = await firstValueFrom(this.httpService.get(`${this.aiUrl}/journeys/${journeyId}/ai-explain`));
+    return response.data;
+  }
+
+  /**
+   * Proxy yêu cầu AI tối ưu lại đường đi cho 1 ngày
+   */
+  async optimizeDayRoute(journeyId: string, dayNumber: number) {
+    const response = await firstValueFrom(this.httpService.post(`${this.aiUrl}/journeys/${journeyId}/days/${dayNumber}/improve-route-order`, {}));
+    return response.data;
   }
 
   private formatHHmm(date: Date): string {
