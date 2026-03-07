@@ -24,7 +24,7 @@ export class AiController {
   }
 
   @Get('proposal/:id')
-  @ApiOperation({ summary: 'Get full draft details for FE display' })
+  @ApiOperation({ summary: 'Lấy chi tiết một bản nháp' })
   async getProposal(@Param('id') id: string) {
     return await this.aiService.getProposalDetails(id);
   }
@@ -38,7 +38,7 @@ export class AiController {
   @Patch('proposal/:id')
   @UseGuards(AtGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Cập nhật thay đổi nhỏ trong bản nháp AI (tinh chỉnh)' })
+  @ApiOperation({ summary: 'Cập nhật thay đổi thông tin tổng quan trong bản nháp AI (tinh chỉnh)' })
   async updateProposal(
     @Param('id') id: string,
     @Body() updateData: UpdateAiProposalDto,
@@ -73,6 +73,16 @@ export class AiController {
       proposalId, body.dayNumber, body.oldPlaceId, body.newPlaceId
     );
   }
+  @Patch('proposal/:id/day/:dayNumber/stop/:placeId')
+@ApiOperation({ summary: 'Cập nhật một điểm dừng cụ thể trong bản nháp' })
+async updateSingleStop(
+  @Param('id') id: string,
+  @Param('dayNumber', ParseIntPipe) dayNumber: number,
+  @Param('placeId') placeId: string,
+  @Body() updateDto: any // FE chỉ cần gửi các trường muốn sửa, ví dụ { "estimated_cost_vnd": 200000 }
+) {
+  return await this.aiService.updateStopInProposal(id, dayNumber, placeId, updateDto);
+}
 
   @Post('accept/:proposalId')
   @UseGuards(AtGuard)

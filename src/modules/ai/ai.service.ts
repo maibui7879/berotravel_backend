@@ -177,6 +177,47 @@ export class AiService {
     return await this.proposalRepo.save(proposal);
   }
 
+  async updateStopInProposal(
+  proposalId: string, 
+  dayNumber: number, 
+  placeId: string, 
+  updateDto: any // Có thể dùng Partial<AiStop>
+) {
+  const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(proposalId) } });
+  if (!proposal) throw new NotFoundException('Bản nháp không tồn tại');
+
+  const day = proposal.days.find(d => d.day_number === dayNumber);
+  if (!day) throw new NotFoundException(`Không tìm thấy ngày ${dayNumber} trong bản nháp`);
+
+  const stop = day.stops.find(s => s.place_id === placeId);
+  if (!stop) throw new NotFoundException(`Không tìm thấy địa điểm ${placeId} trong ngày ${dayNumber}`);
+
+  // Cập nhật các trường dữ liệu
+  if (updateDto.estimated_duration_minutes !== undefined) {
+    stop.estimated_duration_minutes = updateDto.estimated_duration_minutes;
+  }
+  if (updateDto.estimated_cost_vnd !== undefined) {
+    stop.estimated_cost_vnd = updateDto.estimated_cost_vnd;
+  }
+  if (updateDto.order !== undefined) {
+    stop.order = updateDto.order;
+  }
+  if (updateDto.reason) {
+    stop.reason = updateDto.reason;
+  }
+
+  // TÍNH TOÁN LẠI NGÂN SÁCH (Cực kỳ quan trọng để giữ đồng bộ)
+  day.total_estimated_cost_vnd = day.stops.reduce(
+    (sum, s) => sum + (s.estimated_cost_vnd || 0), 0
+  );
+  
+  proposal.total_budget_vnd = proposal.days.reduce(
+    (sum, d) => sum + (d.total_estimated_cost_vnd || 0), 0
+  );
+
+  return await this.proposalRepo.save(proposal);
+}
+
   /**
    * Chốt bản nháp: Map dữ liệu AI sang Journey thật và bật cờ is_manual_cost
    */
