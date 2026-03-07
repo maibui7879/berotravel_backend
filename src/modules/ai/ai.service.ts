@@ -150,6 +150,73 @@ export class AiService {
     return await this.proposalRepo.save(proposal);
   }
 
+  // 1. Lấy giải thích từ AI
+  async getAiExplanation(journeyId: string) {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(`${this.aiUrl}/journeys/${journeyId}/ai-explain`)
+      );
+      return response.data;
+    } catch (e) {
+      throw new InternalServerErrorException('AI Service error: ' + (e.response?.data?.detail || e.message));
+    }
+  }
+
+  // 2. Tối ưu lại thứ tự di chuyển trong ngày (Optimize Route)
+  async optimizeDayRoute(journeyId: string, dayNumber: number) {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(`${this.aiUrl}/journeys/${journeyId}/days/${dayNumber}/improve-route-order`, {})
+      );
+      return response.data; // AI sẽ trả về mảng stops đã sắp xếp lại
+    } catch (e) {
+      throw new InternalServerErrorException('AI Service error: ' + (e.response?.data?.detail || e.message));
+    }
+  }
+
+  // 3. Đổi địa điểm trong bản nháp (Swap Place)
+  async swapPlaceInProposal(proposalId: string, dayNumber: number, oldPlaceId: string, newPlaceId: string) {
+    const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(proposalId) } });
+    if (!proposal) throw new NotFoundException('Bản nháp không tồn tại');
+
+    // Tìm điểm mới trong candidate_pool
+    const newPlace = proposal.candidate_pool.find(p => p.place_id === newPlaceId);
+    if (!newPlace) throw new NotFoundException('Địa điểm mới không có trong danh sách dự phòng');
+
+    // Tìm và thay thế trong mảng days
+    const dayIndex = proposal.days.findIndex(d => d.day_number === dayNumber);
+    if (dayIndex > -1) {
+      const stopIndex = proposal.days[dayIndex].stops.findIndex(s => s.place_id === oldPlaceId);
+      if (stopIndex > -1) {
+        // Cập nhật stop (giữ nguyên order, chỉ thay place và thông tin giá)
+        proposal.days[dayIndex].stops[stopIndex] = {
+          ...proposal.days[dayIndex].stops[stopIndex],
+          place_id: newPlace.place_id,
+          place_name: newPlace.place_name,
+          estimated_cost_vnd: newPlace.estimated_cost_vnd,
+          category: newPlace.category,
+          reason: 'Người dùng tự đổi từ danh sách dự phòng'
+        };
+        
+        // Cập nhật lại tổng tiền của ngày đó
+        proposal.days[dayIndex].total_estimated_cost_vnd = proposal.days[dayIndex].stops
+          .reduce((sum, s) => sum + s.estimated_cost_vnd, 0);
+      } else {
+        throw new NotFoundException(`Địa điểm cũ "${oldPlaceId}" không tìm thấy trong ngày ${dayNumber}`);
+      }
+    } else {
+      throw new NotFoundException(`Ngày ${dayNumber} không tìm thấy trong bản nháp`);
+    }
+
+    // Tính lại tổng ngân sách toàn bộ
+    proposal.total_budget_vnd = proposal.days.reduce(
+      (sum, day) => sum + (day.total_estimated_cost_vnd || 0),
+      0
+    );
+
+    return await this.proposalRepo.save(proposal);
+  }
+
   async acceptProposal(proposalId: string) {
     const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(proposalId) } });
     if (!proposal) throw new NotFoundException('Proposal not found');
