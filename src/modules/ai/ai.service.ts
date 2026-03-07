@@ -8,6 +8,7 @@ import { firstValueFrom } from 'rxjs';
 import { AiProposal } from './entities/ai-proposal.entity';
 import { Journey, StopStatus } from '../journey/entities/journey.entity';
 import { RequestAiPlanDto } from './dto/request-ai-plan.dto';
+import { UpdateAiProposalDto } from './dto/update-ai-proposal.dto';
 
 @Injectable()
 export class AiService {
@@ -53,6 +54,100 @@ export class AiService {
     const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(id) } });
     if (!proposal) throw new NotFoundException('AI Proposal not found');
     return proposal;
+  }
+
+  async getProposalsByJourney(journeyId: string) {
+    const proposals = await this.proposalRepo.find({ 
+      where: { journey_id: journeyId },
+      order: { createdAt: -1 }
+    });
+    return proposals;
+  }
+
+  async deleteProposal(id: string) {
+    const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(id) } });
+    if (!proposal) throw new NotFoundException('AI Proposal not found');
+
+    const result = await this.proposalRepo.delete(proposal._id);
+    
+    if (result.affected === 0) {
+      throw new NotFoundException('Failed to delete AI Proposal');
+    }
+
+    return { success: true, message: 'AI Proposal deleted successfully' };
+  }
+
+  async updateProposal(id: string, updateData: UpdateAiProposalDto) {
+    const proposal = await this.proposalRepo.findOne({ where: { _id: new ObjectId(id) } });
+    if (!proposal) throw new NotFoundException('AI Proposal not found');
+
+    // Cập nhật các field được phép
+    if (updateData.mood_used) proposal.mood_used = updateData.mood_used;
+    if (updateData.planning_notes) proposal.planning_notes = updateData.planning_notes;
+
+    // Cập nhật mảng days nếu có
+    if (updateData.days && Array.isArray(updateData.days)) {
+      proposal.days = proposal.days.map((existingDay, dayIdx) => {
+        const updateDay = updateData.days?.[dayIdx];
+        if (!updateDay) return existingDay;
+
+        // Cập nhật thông tin cơ bản của ngày
+        if (updateDay.day_number) existingDay.day_number = updateDay.day_number;
+        if (updateDay.date) existingDay.date = new Date(updateDay.date);
+        if (updateDay.summary) existingDay.summary = updateDay.summary;
+
+        // Cập nhật mảng stops
+        if (updateDay.stops && Array.isArray(updateDay.stops)) {
+          existingDay.stops = existingDay.stops.map((existingStop, stopIdx) => {
+            const updateStop = updateDay.stops?.[stopIdx];
+            if (!updateStop) return existingStop;
+
+            // Cập nhật các field cho phép fine-tune
+            if (updateStop.place_id) existingStop.place_id = updateStop.place_id;
+            if (updateStop.place_name) existingStop.place_name = updateStop.place_name;
+            if (updateStop.estimated_duration_minutes !== undefined) {
+              existingStop.estimated_duration_minutes = updateStop.estimated_duration_minutes;
+            }
+            if (updateStop.estimated_cost_vnd !== undefined) {
+              existingStop.estimated_cost_vnd = updateStop.estimated_cost_vnd;
+            }
+            if (updateStop.order !== undefined) existingStop.order = updateStop.order;
+            if (updateStop.reason) existingStop.reason = updateStop.reason;
+            if (updateStop.final_score !== undefined) existingStop.final_score = updateStop.final_score;
+            if (updateStop.latitude !== undefined) existingStop.latitude = updateStop.latitude;
+            if (updateStop.longitude !== undefined) existingStop.longitude = updateStop.longitude;
+            if (updateStop.category) existingStop.category = updateStop.category;
+
+            return existingStop;
+          });
+        }
+
+        // Tính lại tổng giá cho ngày nếu có cập nhật stops
+        if (updateDay.stops) {
+          existingDay.total_estimated_cost_vnd = existingDay.stops.reduce(
+            (sum, stop) => sum + (stop.estimated_cost_vnd || 0),
+            0
+          );
+        }
+
+        return existingDay;
+      });
+    }
+
+    // Tính lại tổng ngân sách toàn bộ
+    proposal.total_budget_vnd = proposal.days.reduce(
+      (sum, day) => sum + (day.total_estimated_cost_vnd || 0),
+      0
+    );
+
+    // TODO: Nếu người dùng đổi điểm (place_id changed), cần gọi endpoint improve-route-order
+    // của AI service để tính lại quãng đường và thời gian di chuyển
+    // if (updateData.needRouteUpdate) {
+    //   await this.recalculateRouteWithAi(proposal);
+    // }
+
+    // Lưu lại proposal sau khi cập nhật
+    return await this.proposalRepo.save(proposal);
   }
 
   async acceptProposal(proposalId: string) {
