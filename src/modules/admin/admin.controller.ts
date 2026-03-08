@@ -1,12 +1,17 @@
-import { Controller, Get, Query, UseGuards, Param, Patch } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query, UseGuards, Param, Patch, Body, Post } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { AdminDashboardService } from './services/admin-dashboard.service';
+import { PlacesService } from '../places/places.service';
 import { RolesGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AtGuard } from '../../common/guards/at.guard';
-import { Role } from '../../common/constants';
+import { Role, PlaceStatus } from '../../common/constants';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
-import { Body } from '@nestjs/common/decorators';
+
+interface CurrentUser {
+  sub: string;
+  role: Role;
+}
 
 /**
  * Admin Dashboard Controller
@@ -17,7 +22,10 @@ import { Body } from '@nestjs/common/decorators';
 @UseGuards(AtGuard, RolesGuard)
 @ApiBearerAuth()
 export class AdminController {
-  constructor(private readonly dashboardService: AdminDashboardService) {}
+  constructor(
+    private readonly dashboardService: AdminDashboardService,
+    private readonly placesService: PlacesService,
+  ) {}
 
   /**
    * GET /admin/dashboard/overview
@@ -134,8 +142,84 @@ export class AdminController {
       new Date(endDate),
     );
   }
-  
-  @Get('merchant-requests/pending')
+
+  // ================= PLACES ADMIN ENDPOINTS =================
+
+  @Get('places/pending-creations')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'ADMIN: Lấy danh sách địa điểm mới chờ duyệt' })
+  getPendingPlaces() {
+    return this.placesService.getPendingPlaces();
+  }
+
+  @Get('places/pending-edits')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'ADMIN: Lấy danh sách yêu cầu chỉnh sửa chờ duyệt' })
+  getPendingEditRequests() {
+    return this.placesService.getPendingEditRequests();
+  }
+
+  @Patch('places/creations/:id/verify')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'ADMIN: Duyệt hoặc Từ chối địa điểm mới' })
+  @ApiBody({ schema: { type: 'object', properties: { status: { type: 'string', enum: ['APPROVED', 'REJECTED'] } } } })
+  verifyPlace(
+    @Param('id') id: string,
+    @Body('status') status: PlaceStatus.APPROVED | PlaceStatus.REJECTED,
+    @GetCurrentUser() user: CurrentUser
+  ) {
+    return this.placesService.verifyPlace(id, status, user);
+  }
+
+  @Patch('places/edits/:requestId/approve')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'ADMIN: Chấp thuận yêu cầu chỉnh sửa' })
+  approveEditRequest(@Param('requestId') requestId: string, @GetCurrentUser() user: CurrentUser) {
+    return this.placesService.approveEditRequest(requestId, user);
+  }
+
+  @Patch('places/edits/:requestId/reject')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'ADMIN: Từ chối yêu cầu chỉnh sửa' })
+  @ApiBody({ schema: { type: 'object', properties: { reason: { type: 'string' } } } })
+  rejectEditRequest(
+    @Param('requestId') requestId: string,
+    @Body('reason') reason: string,
+    @GetCurrentUser() user: CurrentUser
+  ) {
+    return this.placesService.rejectEditRequest(requestId, reason, user);
+  }
+
+  @Get('places/pending-claims')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'ADMIN: Lấy danh sách yêu cầu xác nhận chủ sở hữu chờ duyệt' })
+  getPendingClaimRequests() {
+    return this.placesService.getPendingClaimRequests();
+  }
+
+  @Patch('places/claims/:id/approve')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'ADMIN: Chấp thuận yêu cầu xác nhận chủ sở hữu' })
+  approveClaim(
+    @Param('id') id: string,
+    @GetCurrentUser() admin: CurrentUser
+  ) {
+    return this.placesService.approveClaim(id, admin);
+  }
+
+  @Patch('places/claims/:id/reject')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'ADMIN: Từ chối yêu cầu xác nhận chủ sở hữu' })
+  @ApiBody({ schema: { type: 'object', properties: { reason: { type: 'string' } } } })
+  rejectClaim(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @GetCurrentUser() admin: CurrentUser
+  ) {
+    return this.placesService.rejectClaim(id, reason, admin);
+  }
+
+  // ================= MERCHANT ADMIN ENDPOINTS =================
   @ApiOperation({ summary: 'Lấy danh sách các yêu cầu nâng cấp Merchant đang chờ duyệt' })
   getPendingMerchantRequests() {
     return this.dashboardService.getPendingMerchantRequests();

@@ -10,6 +10,7 @@ import { AiProposal } from './entities/ai-proposal.entity';
 import { Journey, StopStatus } from '../journey/entities/journey.entity';
 import { RequestAiPlanDto } from './dto/request-ai-plan.dto';
 import { UpdateAiProposalDto } from './dto/update-ai-proposal.dto';
+import { SuggestNextPlacesDto } from './dto/suggest-next-places.dto';
 
 @Injectable()
 export class AiService {
@@ -289,6 +290,79 @@ export class AiService {
   async optimizeDayRoute(journeyId: string, dayNumber: number) {
     const response = await firstValueFrom(this.httpService.post(`${this.aiUrl}/journeys/${journeyId}/days/${dayNumber}/improve-route-order`, {}));
     return response.data;
+  }
+
+  /**
+   * Gợi ý các địa điểm tiếp theo cho một hành trình.
+   * Tự động xác định điểm dừng cuối cùng làm Seed và lọc trùng với các điểm đã đi.
+   */
+  async suggestNextPlaces(journeyId: string, dto: SuggestNextPlacesDto) {
+    const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+    if (!journey) throw new NotFoundException('Hành trình không tồn tại');
+
+    // 1. Lấy danh sách tất cả place_id ĐÃ CÓ trong hành trình (tất cả các ngày)
+    const visitedPlaceIds = new Set(
+      journey.days?.flatMap(d => d.stops?.map(s => s.place_id) || []) || []
+    );
+
+    // 2. Xác định seed_place_id (điểm cuối cùng)
+    let seedPlaceId = dto.seed_place_id;
+    if (!seedPlaceId && journey.days && journey.days.length > 0) {
+      const allStops = journey.days.flatMap(d => d.stops || []);
+      if (allStops.length > 0) {
+        seedPlaceId = allStops[allStops.length - 1].place_id;
+      }
+    }
+
+    if (!seedPlaceId) {
+      throw new NotFoundException('Không tìm thấy điểm mốc để gợi ý. Vui lòng chỉ định seed_place_id hoặc thêm địa điểm vào hành trình.');
+    }
+
+    try {
+      // Lấy vị trí bắt đầu từ điểm dừng đầu tiên nếu có
+      let startLocationPlaceId: string | undefined;
+      if (journey.days && journey.days.length > 0) {
+        const firstStops = journey.days[0].stops;
+        if (firstStops && firstStops.length > 0) {
+          startLocationPlaceId = firstStops[0].place_id;
+        }
+      }
+
+      // 3. GỌI AI SERVICE: Lấy dư ra để trừ hao sau khi lọc
+      const requestedPlaces = dto.max_places || 10;
+      const overFetchCount = requestedPlaces + visitedPlaceIds.size;
+
+      const response = await firstValueFrom(
+        this.httpService.post(`${this.aiUrl}/journeys/auto-create-related`, {
+          seed_place_id: seedPlaceId,
+          max_places: overFetchCount,
+          owner_id: journey.owner_id,
+          name: `Suggestions for ${journey.name}`,
+          start_date: journey.start_date,
+          end_date: journey.end_date,
+          auto_plan: false, // Chỉ lấy danh sách gợi ý, không tạo lịch trình
+          ...(startLocationPlaceId && { start_location: startLocationPlaceId }),
+          mood: "RESET_HEALING" // Có thể lấy từ profile user
+        })
+      );
+
+      const rawSuggestions = response.data.candidate_pool || [];
+
+      // 4. LỌC TRÙNG: Chỉ giữ lại những điểm CHƯA CÓ trong hành trình
+      const filteredSuggestions = rawSuggestions.filter(
+        (place: any) => !visitedPlaceIds.has(place.place_id)
+      );
+
+      return {
+        journey_id: journeyId,
+        seed_used: seedPlaceId,
+        visited_count: visitedPlaceIds.size,
+        // Chỉ trả về đúng số lượng max_places mà người dùng yêu cầu sau khi đã lọc
+        suggestions: filteredSuggestions.slice(0, requestedPlaces)
+      };
+    } catch (e) {
+      throw new InternalServerErrorException('AI Suggestion error: ' + (e.response?.data?.detail || e.message));
+    }
   }
 
   private formatHHmm(date: Date): string {

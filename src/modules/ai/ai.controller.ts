@@ -5,6 +5,7 @@ import { AtGuard } from '../../common/guards/at.guard';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { RequestAiPlanDto } from './dto/request-ai-plan.dto';
 import { UpdateAiProposalDto } from './dto/update-ai-proposal.dto';
+import { SuggestNextPlacesDto } from './dto/suggest-next-places.dto';
 
 @ApiTags('AI Planning')
 @Controller('ai/planning')
@@ -98,5 +99,17 @@ async updateSingleStop(
   @ApiOperation({ summary: 'Xóa thủ công một bản nháp AI' })
   async deleteProposal(@Param('id') id: string) {
     return await this.aiService.deleteProposal(id);
+  }
+
+  @Post('journey/:journeyId/suggest-next')
+  @ApiOperation({ 
+    summary: 'Gợi ý địa điểm tiếp theo', 
+    description: 'Tự động lấy điểm cuối của hành trình làm mốc để tìm các địa điểm liên quan xung quanh. Có thể truyền thêm seed_place_id để lấy gợi ý dựa trên một điểm cụ thể khác.' 
+  })
+  async suggestNext(
+    @Param('journeyId') journeyId: string,
+    @Body() dto: SuggestNextPlacesDto
+  ) {
+    return await this.aiService.suggestNextPlaces(journeyId, dto);
   }
 }

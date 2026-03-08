@@ -1,15 +1,18 @@
 // src/modules/forum/forum.service.ts
 
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 import { ForumPost, ForumComment, PostStatus, PostSortBy, ForumTag } from '../entities/forum.entity';
+import { ForumReport, ReportStatus } from '../entities/forum-report.entity';
 import { CreatePostDto, CreateCommentDto, PostSearchFilterDto } from '../dto/forum.dto';
+import { ReportPostDto } from '../dto/forum-report.dto';
 import { NotificationsService } from '../../notification/notification.service';
 import { NotificationType } from '../../notification/entities/notification.entity';
 import { UserProfileService } from '../../users/services/user-profile.service';
 import { UserActionType } from '../../../common/constants';
+import { Journey } from '../../journey/entities/journey.entity';
 
 @Injectable()
 export class ForumService {
@@ -17,6 +20,8 @@ export class ForumService {
     @InjectRepository(ForumPost) private readonly postRepo: MongoRepository<ForumPost>,
     @InjectRepository(ForumComment) private readonly commentRepo: MongoRepository<ForumComment>,
     @InjectRepository(ForumTag) private readonly tagRepo: MongoRepository<ForumTag>,
+    @InjectRepository(ForumReport) private readonly reportRepo: MongoRepository<ForumReport>,
+    @InjectRepository(Journey) private readonly journeyRepo: MongoRepository<Journey>,
     private readonly notificationsService: NotificationsService,
     private readonly userProfileService: UserProfileService,
     
@@ -176,5 +181,98 @@ export class ForumService {
     }
     
     return await this.postRepo.delete(new ObjectId(postId));
+  }
+
+  /**
+   * Lấy chi tiết bài viết kèm theo thông tin tóm tắt hành trình (nếu có)
+   */
+  async getPostDetail(postId: string, userId?: string) {
+    const post = await this.postRepo.findOne({ where: { _id: new ObjectId(postId) } });
+    if (!post) throw new NotFoundException('Bài viết không tồn tại');
+
+    // Tăng lượt xem
+    post.stats.views += 1;
+    await this.postRepo.save(post);
+
+    // Lấy thông tin tóm tắt hành trình nếu có journey_id
+    let journey_summary: any = null;
+    if (post.journey_id) {
+      try {
+        const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(post.journey_id) } });
+        if (journey) {
+          journey_summary = {
+            journey_id: journey._id.toString(),
+            name: journey.name,
+            total_days: journey.days?.length || 0,
+            start_date: journey.start_date,
+            end_date: journey.end_date,
+            main_destinations: journey.days
+              ?.flatMap(d => d.stops || [])
+              ?.slice(0, 3)
+              ?.map(s => ({ place_id: s.place_id })) || [],
+            total_budget: journey.total_budget,
+            members_count: journey.members?.length || 0
+          };
+        }
+      } catch (e) {
+        // Ignore if journey not found
+      }
+    }
+
+    return {
+      ...post,
+      journey_summary
+    };
+  }
+
+  /**
+   * Báo cáo bài viết vi phạm
+   */
+  async reportPost(postId: string, reporterId: string, dto: ReportPostDto) {
+    const post = await this.postRepo.findOne({ where: { _id: new ObjectId(postId) } });
+    if (!post) throw new NotFoundException('Bài viết không tồn tại');
+
+    // Kiểm tra xem người này đã báo cáo bài này trước đó chưa
+    const existingReport = await this.reportRepo.findOne({
+      where: {
+        post_id: postId,
+        reporter_id: reporterId
+      }
+    });
+
+    if (existingReport && existingReport.status === ReportStatus.PENDING) {
+      throw new BadRequestException('Bạn đã báo cáo bài viết này rồi, vui lòng chờ xử lý');
+    }
+
+    const report = this.reportRepo.create({
+      post_id: postId,
+      reporter_id: reporterId,
+      author_id: post.author_id,
+      reason: dto.reason,
+      description: dto.description,
+      status: ReportStatus.PENDING
+    });
+
+    const savedReport = await this.reportRepo.save(report);
+
+    // Tăng số báo cáo
+    post.reports_count = (post.reports_count || 0) + 1;
+    await this.postRepo.save(post);
+
+    // Gửi thông báo cho Admin
+    await this.notificationsService.createAndSend({
+      recipient_id: 'admin', // Hoặc gửi cho tất cả admins
+      sender_id: reporterId,
+      type: NotificationType.SYSTEM,
+      title: 'Báo cáo bài viết',
+      message: `Bài viết "${post.title}" đã bị báo cáo vì: ${dto.reason}`,
+      metadata: { post_id: postId, report_id: savedReport._id.toString() }
+    });
+
+    return {
+      success: true,
+      message: 'Báo cáo đã được gửi. Cảm ơn bạn đã giúp chúng tôi xây dựng cộng đồng lành mạnh!',
+      report_id: savedReport._id.toString()
+    };
   }
 }

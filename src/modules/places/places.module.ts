@@ -13,6 +13,6 @@ import { JourneysModule } from '../journey/journey.module';
   imports: [TypeOrmModule.forFeature([Place, PlaceEditRequest, PlaceClaimRequest, Journey]), Journey, FavoritesModule, UsersModule, JourneysModule],
   controllers: [PlacesController],
   providers: [PlacesService],
-  exports: [PlacesService],
+  exports: [PlacesService, TypeOrmModule], // Export TypeOrmModule so other modules can access the repositories
 })
 export class PlacesModule {}

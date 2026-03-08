@@ -1,20 +1,13 @@
-import { IsString, IsNotEmpty, IsEnum, IsOptional, IsArray, IsUUID, IsNumber, Min} from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum, IsOptional, IsArray, IsNumber, Min, IsDate} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ForumCategory } from '../entities/forum.entity';
 import { Type } from 'class-transformer';
-import { CreateDateColumn } from 'typeorm/decorator/columns/CreateDateColumn.js';
-import { Column } from 'typeorm/decorator/columns/Column.js';
-import { Index } from 'typeorm/decorator/Index.js';
-import { ObjectId } from 'typeorm/driver/mongodb/typings.js';
-import { ObjectIdColumn } from 'typeorm/decorator/columns/ObjectIdColumn.js';
 
 export enum PostSortBy {
   LATEST = 'latest',     // Mới nhất
   POPULAR = 'popular',   // Nhiều Like nhất
   TRENDING = 'trending', // Nhiều bình luận/lượt xem nhất
 }
-
-
 
 export class PostSearchFilterDto {
   @ApiPropertyOptional({ description: 'Tìm kiếm theo tiêu đề hoặc nội dung' })
@@ -55,3 +48,4 @@ export class CreateCommentDto {
   @ApiProperty() @IsString() @IsNotEmpty() content: string;
   @ApiPropertyOptional() @IsString() @IsOptional() parent_id?: string;
 }
+
