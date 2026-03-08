@@ -5,6 +5,7 @@ import { UsersService } from './services/users.service';
 import { UserProfileService } from './services/user-profile.service'; // [NEW] Import Service thống kê
 
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -26,6 +27,13 @@ export class UsersController {
   @ApiOperation({ summary: 'Lấy thông tin hồ sơ của chính mình' })
   getMe(@GetCurrentUser('sub') userId: string) {
     return this.usersService.findById(userId);
+  }
+
+  @Get(':id/public-profile')
+  @Public()
+  @ApiOperation({ summary: 'Xem hồ sơ công khai của người khác (ẩn thông tin nhạy cảm)' })
+  async getPublicProfile(@Param('id') id: string) {
+    return await this.usersService.getPublicProfile(id);
   }
 
   // [NEW] Endpoint lấy thống kê (Travel DNA)

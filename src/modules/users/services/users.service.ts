@@ -97,6 +97,27 @@ export class UsersService {
     if (!user) throw new NotFoundException('User không tồn tại');
     return user;
   }
+
+  /**
+   * Lấy hồ sơ công khai của người dùng (ẩn thông tin nhạy cảm)
+   */
+  async getPublicProfile(id: string) {
+    if (!ObjectId.isValid(id)) throw new BadRequestException('ID không hợp lệ');
+    const user = await this.userRepository.findOne({ where: { _id: new ObjectId(id) } });
+    if (!user) throw new NotFoundException('Người dùng không tồn tại');
+
+    // Chỉ trả về các trường công khai
+    return {
+      id: user._id.toString(),
+      fullName: user.fullName,
+      avatar: user.avatar,
+      coverImage: user.coverImage,
+      bio: user.bio,
+      travelStyle: user.travelStyle,
+      role: user.role,
+      createdAt: user.createdAt
+    };
+  }
   
   // Admin: Xóa người dùng
   async remove(id: string) {
