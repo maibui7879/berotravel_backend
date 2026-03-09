@@ -7,16 +7,19 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
+import { UseFilters } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config'; 
 import { SendMessageDto, VotePollDto, ReactMessageDto } from './dto/chat.dto';
+import { WsCatchAllFilter } from '../../common/filters/ws-exception.filter';
 
 @WebSocketGateway({
   namespace: '/chat',
   cors: { origin: '*' },
 })
+@UseFilters(new WsCatchAllFilter())
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
 
@@ -42,6 +45,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       
       console.log(`User ${payload.sub} connected & joined global socket ${personalRoom}`);
     } catch (e) {
+      console.error('❌ LỖI KẾT NỐI SOCKET:', e.message); 
       client.disconnect();
     }
   }
@@ -51,25 +55,50 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // Client mở một phòng chat cụ thể (màn hình chat)
-  @SubscribeMessage('join_room')
-  handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { room_id: string }) {
-    if (client.data.user && data.room_id) {
-      const roomIdStr = `room_${data.room_id}`;
-      client.join(roomIdStr);
-      console.log(`User ${client.data.user.sub} is now active in room ${data.room_id}`);
+@SubscribeMessage('join_room')
+  async handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { room_id?: string, journey_id?: string }) {
+    try {
+      const userId = client.data.user?.sub;
+      if (!userId) return;
+
+      let targetRoomId = data.room_id;
+
+      // Nếu client chỉ truyền journey_id lên, ta sẽ tìm/tạo roomId tương ứng
+      if (!targetRoomId && data.journey_id) {
+        targetRoomId = await this.chatService.getOrCreateJourneyRoom(data.journey_id, userId);
+      }
+
+      if (targetRoomId) {
+        const roomIdStr = `room_${targetRoomId}`;
+        client.join(roomIdStr);
+        console.log(`User ${userId} joined socket room: ${roomIdStr}`);
+        
+        // Trả về cho frontend biết roomId thực tế để dùng cho luồng Vote/React
+        client.emit('room_joined_success', { room_id: targetRoomId });
+      } else {
+        client.emit('error', { message: 'Phải cung cấp room_id hoặc journey_id' });
+      }
+    } catch (error) {
+      console.error('Lỗi khi join room:', error.message);
+      client.emit('error', { message: error.message });
     }
   }
-
+  
   @SubscribeMessage('send_message')
   async handleSendMessage(@ConnectedSocket() client: Socket, @MessageBody() dto: SendMessageDto) {
     try {
+      console.log('--> Nhận lệnh send_message từ:', client.data.user.sub);
       const userId = client.data.user.sub;
+      
       // Lưu vào DB
       const savedMsg = await this.chatService.saveMessage(userId, dto);
       
       // Phát tới kênh chung của phòng chat (Dành cho những người ĐANG mở màn hình chat này)
       const targetRoom = `room_${savedMsg.room_id}`;
       this.server.to(targetRoom).emit('receive_message', savedMsg);
+
+      // Trả về cho chính client vừa gửi để frontend/postman nhận được phản hồi ngay lập tức
+      client.emit('message_sent_success', savedMsg);
 
       // Nếu là chat 1-1, bắt buộc phải bắn notification (popup) cho cả user nhận (dù chưa mở màn hình chat)
       if (dto.receiver_id) {
@@ -79,7 +108,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
     } catch (error) {
-      client.emit('error', { message: error.message });
+      console.error('Lỗi tại Gateway:', error.message);
+      // Bắn lỗi ngược về Postman để bạn nhìn thấy ở tab Response
+      client.emit('error', { message: error.message, stack: error.stack }); 
     }
   }
 

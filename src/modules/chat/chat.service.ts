@@ -27,25 +27,31 @@ export class ChatService {
   async getUserConversations(userId: string) {
     return await this.conversationRepo.find({
       where: {
-        participant_ids: userId // Mảng có chứa userId
+        participant_ids: userId 
       } as any,
       order: { updated_at: 'DESC' }
     });
   }
 
   // 2. Tìm hoặc tạo phòng chat 1-1
-  async getOrCreateDirectRoom(user1Id: string, user2Id: string): Promise<ChatConversation> {
+async getOrCreateDirectRoom(user1Id: string, user2Id: string): Promise<ChatConversation> {
+    const u1 = String(user1Id);
+    const u2 = String(user2Id);
+
     let room = await this.conversationRepo.findOne({
       where: {
         type: ConversationType.DIRECT,
-        participant_ids: { $all: [user1Id, user2Id] } as any
-      }
+        $or: [
+          { participant_ids: [u1, u2] },
+          { participant_ids: [u2, u1] }
+        ]
+      } as any
     });
 
     if (!room) {
       room = this.conversationRepo.create({
         type: ConversationType.DIRECT,
-        participant_ids: [user1Id, user2Id],
+        participant_ids: [u1, u2],
       });
       room = await this.conversationRepo.save(room);
     }
@@ -60,13 +66,32 @@ export class ChatService {
     // A. Nếu nhắn vào chuyến đi (Journey)
     if (dto.journey_id) {
       const journey = await this.journeysService.findOne(dto.journey_id);
-      const isMember = journey.members.some(m => m.user_id === userId);
-      if (!isMember) throw new BadRequestException('Bạn không phải thành viên của hành trình này');
+      if (!journey) throw new BadRequestException('Không tìm thấy chuyến đi');
+
+      const members = journey.members || [];
+
+      // Kiểm tra thành viên
+      const isMember = members.some(m => {
+        if (!m) return false;
+        const idInDb = m.user_id || (m as any).userId || m; 
+        return String(idInDb) === String(userId);
+      });
+
+      // Đặc cách cho chủ chuyến đi
+      const isOwner = journey.owner_id && String(journey.owner_id) === String(userId);
+
+      if (!isMember && !isOwner) {
+        throw new BadRequestException('Bạn không phải thành viên của hành trình này');
+      }
       
       let room = await this.conversationRepo.findOne({ where: { journey_id: dto.journey_id } });
       if (!room) {
-        // Khởi tạo phòng cho chuyến đi nếu chưa có, đưa toàn bộ ID vào participant_ids
-        const memberIds = journey.members.map(m => m.user_id);
+        // Khởi tạo phòng cho chuyến đi nếu chưa có
+        const memberIds = members.map(m => String(m.user_id || (m as any).userId || m));
+        if (journey.owner_id && !memberIds.includes(String(journey.owner_id))) {
+          memberIds.push(String(journey.owner_id));
+        }
+
         room = this.conversationRepo.create({ 
           type: ConversationType.JOURNEY, 
           journey_id: dto.journey_id,
@@ -168,7 +193,7 @@ export class ChatService {
   }
 
   // 8. Vote Poll
-  async votePoll(messageId: string, optionId: string, userId: string) {
+async votePoll(messageId: string, optionId: string, userId: string) {
     const message = await this.chatRepo.findOne({ where: { _id: new ObjectId(messageId) } });
     if (!message || message.type !== MessageType.POLL) throw new BadRequestException('Tin nhắn không phải Poll');
 
@@ -181,12 +206,15 @@ export class ChatService {
     const selectedOpt = options.find(opt => opt.id === optionId);
     if (selectedOpt) selectedOpt.voters.push(userId);
 
+    // Gắn lại metadata
     message.metadata.options = options;
-    await this.chatRepo.update({ _id: new ObjectId(messageId) } as any, { metadata: message.metadata });
-    return await this.chatRepo.findOne({ where: { _id: new ObjectId(messageId) } });
+    
+    // SỬA Ở ĐÂY: Dùng save() thay vì update()
+    return await this.chatRepo.save(message); 
   }
 
   // 9. React Message
+// 9. React Message
   async reactMessage(messageId: string, userId: string, emoji: string) {
     const message = await this.chatRepo.findOne({ where: { _id: new ObjectId(messageId) } });
     if (!message) throw new BadRequestException('Tin nhắn không tồn tại');
@@ -204,11 +232,48 @@ export class ChatService {
       message.reactions.push({ userId, emoji });
     }
 
-    await this.chatRepo.update({ _id: new ObjectId(messageId) } as any, { reactions: message.reactions });
+    // SỬA Ở ĐÂY: Dùng save() thay vì update()
+    await this.chatRepo.save(message); 
     
     return { messageId, reactions: message.reactions, room_id: message.room_id };
   }
 
+  // Tìm hoặc tạo phòng chat cho Chuyến đi (Journey)
+  async getOrCreateJourneyRoom(journeyId: string, userId: string): Promise<string> {
+    const journey = await this.journeysService.findOne(journeyId);
+    if (!journey) throw new BadRequestException('Không tìm thấy chuyến đi');
+
+    const members = journey.members || [];
+    const isMember = members.some(m => {
+      if (!m) return false;
+      const idInDb = m.user_id || (m as any).userId || m; 
+      return String(idInDb) === String(userId);
+    });
+    const isOwner = journey.owner_id && String(journey.owner_id) === String(userId);
+
+    if (!isMember && !isOwner) {
+      throw new ForbiddenException('Bạn không phải thành viên của hành trình này');
+    }
+    
+    let room = await this.conversationRepo.findOne({ where: { journey_id: journeyId } });
+    if (!room) {
+      const memberIds = members.map(m => String(m.user_id || (m as any).userId || m));
+      if (journey.owner_id && !memberIds.includes(String(journey.owner_id))) {
+        memberIds.push(String(journey.owner_id));
+      }
+
+      room = this.conversationRepo.create({ 
+        type: ConversationType.JOURNEY, 
+        journey_id: journeyId,
+        participant_ids: memberIds
+      });
+      room = await this.conversationRepo.save(room);
+    }
+
+    const rawId = room._id || (room as any).id;
+    return rawId ? rawId.toString() : String(rawId);
+  }
+  
   // 10. Xóa tin nhắn
   async deleteMessage(messageId: string) {
       await this.chatRepo.delete(new ObjectId(messageId));

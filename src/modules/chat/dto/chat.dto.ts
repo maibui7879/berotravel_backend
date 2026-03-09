@@ -39,10 +39,16 @@ export class SendMessageDto {
 
 // [UPDATED] Vote Poll - journey_id thay vì group_id
 export class VotePollDto {
+  
   @ApiProperty({ description: 'Journey ID' })
   @IsNotEmpty()
   @IsString()
   room_id: string;
+
+  @ApiPropertyOptional({ description: 'Journey ID (Tùy chọn)' })
+  @IsOptional() // Cho phép gửi journey_id
+  @IsString()
+  journey_id?: string;
 
   @ApiProperty()
   @IsNotEmpty()
@@ -62,6 +68,11 @@ export class ReactMessageDto {
   @IsString()
   room_id: string;
 
+  @ApiPropertyOptional({ description: 'Journey ID (Tùy chọn)' })
+  @IsOptional() // Cho phép gửi journey_id
+  @IsString()
+  journey_id?: string;
+  
   @ApiProperty()
   @IsNotEmpty()
   @IsString()

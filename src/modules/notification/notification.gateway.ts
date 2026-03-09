@@ -4,14 +4,17 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
+import { UseFilters } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { WsCatchAllFilter } from '../../common/filters/ws-exception.filter';
 
 @WebSocketGateway({
   namespace: '/notifications', // Namespace riêng
   cors: { origin: '*' },
 })
+@UseFilters(new WsCatchAllFilter())
 export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
 
