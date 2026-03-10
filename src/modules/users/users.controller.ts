@@ -1,5 +1,5 @@
 import { Controller, Get, Patch, Body, Delete, Param, UseGuards, Post } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiResponse } from '@nestjs/swagger';
 
 import { UsersService } from './services/users.service';
 import { UserProfileService } from './services/user-profile.service'; // [NEW] Import Service thống kê
@@ -43,6 +43,13 @@ export class UsersController {
     return this.userProfileService.getInterestVector(userId);
   }
 
+  @Get(':id/travel-dna')
+  @Public()
+  @ApiOperation({ summary: 'Xem Travel DNA Profile của người dùng khác' })
+  async getOtherUserTravelDna(@Param('id') userId: string) {
+    return await this.userProfileService.getInterestVector(userId);
+  }
+
   @Patch('profile')
   @ApiOperation({ summary: 'Cập nhật hồ sơ cá nhân' })
   updateMe(
@@ -77,7 +84,74 @@ export class UsersController {
   @Post('request-merchant')
   @UseGuards(AtGuard) // Yêu cầu phải đăng nhập
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Gửi yêu cầu nâng cấp tài khoản lên Merchant kèm thông tin kinh doanh' })
+  @ApiOperation({ 
+    summary: 'Gửi yêu cầu nâng cấp tài khoản lên Merchant',
+    description: 'Người dùng gửi thông tin kinh doanh để yêu cầu nâng cấp tài khoản thành Merchant. Yêu cầu sẽ được Admin xét duyệt.',
+  })
+  @ApiBody({
+    type: CreateMerchantRequestDto,
+    description: 'Thông tin kinh doanh cần cung cấp',
+    examples: {
+      valid: {
+        summary: 'Ví dụ yêu cầu hợp lệ',
+        value: {
+          business_name: 'BeroTravel - Chuyên Gia Du Lịch',
+          tax_code: '0112345678',
+          address: '123 Phố Tây Hồ, Quận Tây Hồ, Hà Nội',
+          phone_number: '+84912345678',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Yêu cầu được tạo thành công',
+    schema: {
+      example: {
+        id: '507f1f77bcf86cd799439011',
+        user_id: '507f1f77bcf86cd799439010',
+        business_name: 'BeroTravel - Chuyên Gia Du Lịch',
+        tax_code: '0112345678',
+        address: '123 Phố Tây Hồ, Quận Tây Hồ, Hà Nội',
+        phone_number: '+84912345678',
+        status: 'PENDING',
+        created_at: '2026-03-10T10:30:00.000Z',
+        updated_at: '2026-03-10T10:30:00.000Z',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Dữ liệu đầu vào không hợp lệ',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: ['business_name should not be empty', 'tax_code must be a string'],
+        error: 'Bad Request',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Người dùng chưa đăng nhập',
+    schema: {
+      example: {
+        statusCode: 401,
+        message: 'Unauthorized',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Người dùng đã có yêu cầu merchant đang chờ xét duyệt',
+    schema: {
+      example: {
+        statusCode: 409,
+        message: 'Bạn đã có yêu cầu nâng cấp Merchant đang chờ xét duyệt',
+        error: 'Conflict',
+      },
+    },
+  })
   requestMerchant(
     @GetCurrentUser('sub') userId: string,
     @Body() dto: CreateMerchantRequestDto,
