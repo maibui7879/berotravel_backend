@@ -504,6 +504,11 @@ export class JourneysService {
     };
 
     journey.members.push(newMember);
+    
+    // Tự động tạo mã mời mới (Random 6 ký tự viết hoa)
+    const newInviteCode = this.generateInviteCode();
+    journey.invite_code = newInviteCode;
+    
     await this.journeyRepo.save(journey);
     await this.budgetService.syncSmartBudget(journey);
 
