@@ -15,7 +15,7 @@ export class AiController {
   @Post('plan/:journeyId')
   @UseGuards(AtGuard) 
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Yêu cầu AI lập kế hoạch hành trình (Lấy ID từ Token)' })
+  @ApiOperation({ summary: 'Yêu cầu AI lập kế hoạch một hành trình cụ thể' })
   async createPlan(
     @Param('journeyId') journeyId: string, 
     @GetCurrentUser('sub') userId: string, 
@@ -25,12 +25,16 @@ export class AiController {
   }
 
   @Get('proposal/:id')
+  @UseGuards(AtGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Lấy chi tiết một bản nháp' })
   async getProposal(@Param('id') id: string) {
     return await this.aiService.getProposalDetails(id);
   }
 
   @Get('proposals/journey/:journeyId')
+  @UseGuards(AtGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Lấy danh sách tất cả các bản nháp của một hành trình cụ thể (Lịch sử)' })
   async getProposalsByJourney(@Param('journeyId') journeyId: string) {
     return await this.aiService.getProposalsByJourney(journeyId);
@@ -48,12 +52,16 @@ export class AiController {
   }
 
   @Get('explain/:journeyId')
+  @UseGuards(AtGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Lấy giải thích thuật toán chọn điểm của AI' })
   async explain(@Param('journeyId') journeyId: string) {
     return await this.aiService.getAiExplanation(journeyId);
   }
 
   @Post('optimize/:journeyId/:dayNumber')
+  @UseGuards(AtGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Tối ưu lại đường đi ngắn nhất cho 1 ngày' })
   async optimizeDay(
     @Param('journeyId') journeyId: string,
@@ -75,8 +83,10 @@ export class AiController {
     );
   }
   @Patch('proposal/:id/day/:dayNumber/stop/:placeId')
-@ApiOperation({ summary: 'Cập nhật một điểm dừng cụ thể trong bản nháp' })
-async updateSingleStop(
+  @UseGuards(AtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cập nhật một điểm dừng cụ thể trong bản nháp' })
+  async updateSingleStop(
   @Param('id') id: string,
   @Param('dayNumber', ParseIntPipe) dayNumber: number,
   @Param('placeId') placeId: string,
@@ -102,6 +112,8 @@ async updateSingleStop(
   }
 
   @Post('journey/:journeyId/suggest-next')
+  @UseGuards(AtGuard)
+  @ApiBearerAuth()
   @ApiOperation({ 
     summary: 'Gợi ý địa điểm tiếp theo', 
     description: 'Tự động lấy điểm cuối của hành trình làm mốc để tìm các địa điểm liên quan xung quanh. Có thể truyền thêm seed_place_id để lấy gợi ý dựa trên một điểm cụ thể khác.' 
