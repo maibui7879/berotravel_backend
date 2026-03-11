@@ -55,15 +55,17 @@ export class AuthService {
   async signIn(dto: LoginDto) {
     const email = dto.email.toLowerCase();
     const user = await this.userRepository.findOneBy({ email });
+    
+    const genericErrorMsg = 'Email hoặc mật khẩu không chính xác';
 
-    if (!user) throw new ForbiddenException('Tài khoản không tồn tại');
+    if (!user) throw new ForbiddenException(genericErrorMsg);
     
     if (!user.password) {
-      throw new ForbiddenException('Tài khoản này được đăng ký qua MXH. Vui lòng đăng nhập bằng Google.');
+      throw new ForbiddenException(genericErrorMsg);
     }
 
     const passwordMatches = await bcrypt.compare(dto.password, user.password);
-    if (!passwordMatches) throw new ForbiddenException('Mật khẩu không chính xác');
+    if (!passwordMatches) throw new ForbiddenException(genericErrorMsg);
 
     return this.generateAuthResponse(user, false);
   }

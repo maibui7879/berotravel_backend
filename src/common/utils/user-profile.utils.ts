@@ -1,4 +1,4 @@
-import { UserActionType, ACTION_SCORES, MAX_CATEGORY_SCORE } from '../../../common/constants';
+import { UserActionType, ACTION_SCORES, MAX_CATEGORY_SCORE } from '../constants';
 
 // Define DNA Group interface for type safety
 export interface DNAGroup {

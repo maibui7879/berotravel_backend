@@ -9,7 +9,7 @@ import { Journey } from '../journey/entities/journey.entity';
 
 @Module({
   imports: [
-    HttpModule.register({ timeout: 60000 }), // AI có thể mất thời gian xử lý
+    HttpModule.register({ timeout: 600000 }), // AI có thể mất thời gian xử lý
     TypeOrmModule.forFeature([AiProposal, Journey]),
   ],
   providers: [AiService],

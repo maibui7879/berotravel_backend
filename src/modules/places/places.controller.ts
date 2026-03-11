@@ -1,15 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post, Delete, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Delete, Query, UseGuards, UseInterceptors, UploadedFiles, BadRequestException } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import type { Multer } from 'multer';
 import { PlacesService } from './places.service';
 import { CreatePlaceDto } from './dto/create-place.dto';
 import { UpdatePlaceDto } from './dto/update-place.dto';
 import { SearchPlaceDto } from './dto/search-place.dto';
+import { ClaimPlaceDto } from './dto/claim-place.dto';
 import { Role } from '../../common/constants';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { AtGuard } from '../../common/guards/at.guard';
 import { RolesGuard } from '../../common/guards/role.guard';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 
 interface CurrentUser {
   sub: string;
@@ -49,14 +52,26 @@ export class PlacesController {
   @Post(':id/claim')
   @Roles(Role.MERCHANT)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Merchant: Gửi yêu cầu xác nhận chủ sở hữu địa điểm' })
-  @ApiBody({ schema: { type: 'object', properties: { business_proof: { type: 'array', items: { type: 'string' } } } } })
-  claimPlace(
+  @ApiConsumes('multipart/form-data') // Khai báo API nhận dữ liệu dạng file
+  @ApiOperation({ summary: 'Merchant: Gửi yêu cầu xác nhận chủ sở hữu (cho phép gửi nhiều ảnh/file)' })
+  @UseInterceptors(FilesInterceptor('business_proof')) // Tên field trùng với DTO
+  async claimPlace(
     @Param('id') id: string,
-    @Body('business_proof') proof: string[],
+    @Body() dto: ClaimPlaceDto,
+    @UploadedFiles() files: Multer.File[], // Nhận mảng files
     @GetCurrentUser() user: CurrentUser
   ) {
-    return this.placesService.requestClaim(id, proof, user);
+    // Kiểm tra xem người dùng đã cung cấp ít nhất một tệp
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Vui lòng cung cấp ít nhất một tệp minh chứng kinh doanh');
+    }
+
+    // Chuyển đổi file thành mảng URL/path
+    // Lưu ý: Hiện tại chúng ta lưu the tên file thay vì URL thực
+    // Sau này bạn có thể thay thế bằng upload lên Cloudinary/S3 để lấy URL thực
+    const proofUrls = files.map(f => f.path || f.originalname);
+
+    return this.placesService.requestClaim(id, proofUrls, user);
   }
 
   @Patch(':id')

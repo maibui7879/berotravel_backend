@@ -7,7 +7,7 @@ import { UserTravelProfile } from '../entities/user-travel-profile.entity';
 import { Place } from '../../../modules/places/entities/place.entity';
 import { User } from '../entities/user.entity';
 import { UserActionType, ACTION_SCORES, MAX_CATEGORY_SCORE } from '../../../common/constants';
-import { DNA_MAPPING, UserProfileUtils } from './user-profile.utils';
+import { DNA_MAPPING, UserProfileUtils } from '../../../common/utils/user-profile.utils';
 
 @Injectable()
 export class UserProfileService {
