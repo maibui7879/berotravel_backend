@@ -66,18 +66,78 @@ export class ReviewsService {
     const skip = (Number(page) - 1) * Number(limit);
     const take = Number(limit);
 
-    const where: any = { place_id: placeId, status: ReviewStatus.PUBLISHED };
-    if (filter === 'POSITIVE') where.rating = { $gte: 4 };
-    if (filter === 'NEGATIVE') where.rating = { $lte: 2 };
+    // Build match stage
+    const matchStage: any = { place_id: placeId, status: ReviewStatus.PUBLISHED };
+    if (filter === 'POSITIVE') matchStage.rating = { $gte: 4 };
+    if (filter === 'NEGATIVE') matchStage.rating = { $lte: 2 };
 
-    const order = { [sort_by]: sort_order === 'DESC' ? -1 : 1 };
+    const sortOrder = sort_order === 'DESC' ? -1 : 1;
 
-    const [data, total] = await this.reviewRepo.findAndCount({
-      where,
-      skip,
-      take,
-      order: order as any,
-    });
+    // Aggregation pipeline with $lookup to fetch user data
+    const pipeline: any[] = [
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: 'user', // MongoDB collection name for users
+          localField: 'user_id',
+          foreignField: '_id',
+          as: 'userDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$userDetails',
+          preserveNullAndEmptyArrays: true // In case user doesn't exist
+        }
+      },
+      {
+        $project: {
+          // Keep review fields
+          _id: 1,
+          place_id: 1,
+          criteria: 1,
+          rating: 1,
+          content: 1,
+          images: 1,
+          helpful_count: 1,
+          merchant_reply: 1,
+          merchant_reply_at: 1,
+          is_anonymous: 1,
+          is_verified: 1,
+          status: 1,
+          created_at: 1,
+          updated_at: 1,
+          // Map user data - exclude user info if is_anonymous is true
+          user: {
+            $cond: {
+              if: '$is_anonymous',
+              then: null,
+              else: {
+                id: '$userDetails._id',
+                fullName: '$userDetails.fullName',
+                avatar: '$userDetails.avatar'
+              }
+            }
+          }
+        }
+      },
+      { $sort: { [sort_by]: sortOrder } },
+      { $skip: skip },
+      { $limit: take }
+    ];
+
+    // Fetch total count
+    const countPipeline = [
+      { $match: matchStage },
+      { $count: 'total' }
+    ];
+
+    const [data, countResult] = await Promise.all([
+      this.reviewRepo.aggregate(pipeline).toArray(),
+      this.reviewRepo.aggregate(countPipeline).toArray()
+    ]);
+
+    const total = countResult.length > 0 ? countResult[0].total : 0;
 
     return {
       data,

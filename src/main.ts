@@ -30,8 +30,13 @@ app.useGlobalGuards(new AtGuard(reflector));
   app.useGlobalInterceptors(new TransformInterceptor());
   app.enableCors();
 
-  await app.listen(3000);
-  console.log(`🚀 API Docs: http://localhost:3000/api/docs`);
+  const port = process.env.PORT || 3000;
+  
+  // Lắng nghe trên '0.0.0.0' để cho phép truy cập từ bên ngoài container
+  await app.listen(port, '0.0.0.0');
+  
+  console.log(`🚀 Server is running on port: ${port}`);
+  console.log(`🚀 API Docs: http://localhost:${port}/api/docs`);
 }
 
 bootstrap();

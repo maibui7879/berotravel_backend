@@ -148,37 +148,136 @@ async getOrCreateDirectRoom(user1Id: string, user2Id: string): Promise<ChatConve
     return room;
   }
 
-  // 4. Lấy danh sách tin nhắn
+  // 4. Lấy danh sách tin nhắn - WITH USER DATA
   async getMessages(roomId: string, userId: string, limit = 50) {
     await this.checkUserInRoom(roomId, userId);
 
-    const messages = await this.chatRepo.find({
-      where: { room_id: roomId },
-      order: { created_at: 'DESC' },
-      take: limit,
-    } as any);
-    return messages.reverse();
+    // Use aggregation to fetch messages with user info
+    const messages = await this.chatRepo.aggregate([
+      { $match: { room_id: roomId } },
+      {
+        $lookup: {
+          from: 'user',
+          localField: 'sender_id',
+          foreignField: '_id',
+          as: 'senderDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$senderDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          // Keep message fields
+          _id: 1,
+          room_id: 1,
+          room_type: 1,
+          sender_id: 1,
+          content: 1,
+          type: 1,
+          metadata: 1,
+          reply_to_id: 1,
+          reactions: 1,
+          created_at: 1,
+          // Map user data
+          sender: {
+            id: '$senderDetails._id',
+            fullName: '$senderDetails.fullName',
+            avatar: '$senderDetails.avatar'
+          }
+        }
+      },
+      { $sort: { created_at: 1 } },
+      { $limit: limit }
+    ]).toArray();
+
+    return messages;
   }
 
-  // 5. Kho Ảnh
+  // 5. Kho Ảnh - WITH USER DATA
   async getRoomImages(roomId: string, userId: string) {
     await this.checkUserInRoom(roomId, userId);
-    return await this.chatRepo.find({
-      where: { room_id: roomId, type: MessageType.IMAGE },
-      order: { created_at: 'DESC' }
-    } as any);
+    
+    return await this.chatRepo.aggregate([
+      { $match: { room_id: roomId, type: MessageType.IMAGE } },
+      {
+        $lookup: {
+          from: 'user',
+          localField: 'sender_id',
+          foreignField: '_id',
+          as: 'senderDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$senderDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          room_id: 1,
+          sender_id: 1,
+          content: 1,
+          type: 1,
+          metadata: 1,
+          created_at: 1,
+          sender: {
+            id: '$senderDetails._id',
+            fullName: '$senderDetails.fullName',
+            avatar: '$senderDetails.avatar'
+          }
+        }
+      },
+      { $sort: { created_at: -1 } }
+    ]).toArray();
   }
 
-  // 6. Kho Bình chọn
+  // 6. Kho Bình chọn - WITH USER DATA
   async getRoomPolls(roomId: string, userId: string) {
     await this.checkUserInRoom(roomId, userId);
-    return await this.chatRepo.find({
-      where: { room_id: roomId, type: MessageType.POLL },
-      order: { created_at: 'DESC' }
-    } as any);
+    
+    return await this.chatRepo.aggregate([
+      { $match: { room_id: roomId, type: MessageType.POLL } },
+      {
+        $lookup: {
+          from: 'user',
+          localField: 'sender_id',
+          foreignField: '_id',
+          as: 'senderDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$senderDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          room_id: 1,
+          sender_id: 1,
+          content: 1,
+          type: 1,
+          metadata: 1,
+          created_at: 1,
+          sender: {
+            id: '$senderDetails._id',
+            fullName: '$senderDetails.fullName',
+            avatar: '$senderDetails.avatar'
+          }
+        }
+      },
+      { $sort: { created_at: -1 } }
+    ]).toArray();
   }
 
-  // 7. Tìm kiếm tin nhắn
+  // 7. Tìm kiếm tin nhắn - WITH USER DATA
   async searchMessages(roomId: string, userId: string, queryDto: SearchChatDto) {
     await this.checkUserInRoom(roomId, userId);
 
@@ -186,10 +285,40 @@ async getOrCreateDirectRoom(user1Id: string, user2Id: string): Promise<ChatConve
     if (queryDto.keyword) query.content = { $regex: queryDto.keyword, $options: 'i' };
     if (queryDto.sender_id) query.sender_id = queryDto.sender_id;
 
-    return await this.chatRepo.find({
-      where: query,
-      order: { created_at: 'DESC' }
-    } as any);
+    return await this.chatRepo.aggregate([
+      { $match: query },
+      {
+        $lookup: {
+          from: 'user',
+          localField: 'sender_id',
+          foreignField: '_id',
+          as: 'senderDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$senderDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          room_id: 1,
+          sender_id: 1,
+          content: 1,
+          type: 1,
+          metadata: 1,
+          created_at: 1,
+          sender: {
+            id: '$senderDetails._id',
+            fullName: '$senderDetails.fullName',
+            avatar: '$senderDetails.avatar'
+          }
+        }
+      },
+      { $sort: { created_at: -1 } }
+    ]).toArray();
   }
 
   // 8. Vote Poll

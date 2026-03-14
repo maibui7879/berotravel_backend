@@ -108,13 +108,63 @@ export class ForumService {
         break;
     }
 
-    // 3. Thực thi Query với phân trang
-    const [data, total] = await this.postRepo.findAndCount({
-      where: query,
-      order: sortOrder,
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    // Use aggregation pipeline with $lookup to fetch author data
+    const pipeline: any[] = [
+      { $match: query },
+      {
+        $lookup: {
+          from: 'user',
+          localField: 'author_id',
+          foreignField: '_id',
+          as: 'authorDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$authorDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          content: 1,
+          images: 1,
+          category: 1,
+          tag_ids: 1,
+          place_ids: 1,
+          journey_id: 1,
+          stats: 1,
+          is_pinned: 1,
+          reports_count: 1,
+          status: 1,
+          created_at: 1,
+          updated_at: 1,
+          author: {
+            id: '$authorDetails._id',
+            fullName: '$authorDetails.fullName',
+            avatar: '$authorDetails.avatar'
+          }
+        }
+      },
+      { $sort: sortOrder },
+      { $skip: (page - 1) * limit },
+      { $limit: limit }
+    ];
+
+    // Fetch total count
+    const countPipeline = [
+      { $match: query },
+      { $count: 'total' }
+    ];
+
+    const [data, countResult] = await Promise.all([
+      this.postRepo.aggregate(pipeline).toArray(),
+      this.postRepo.aggregate(countPipeline).toArray()
+    ]);
+
+    const total = countResult.length > 0 ? countResult[0].total : 0;
 
     return {
       data,
@@ -169,7 +219,41 @@ export class ForumService {
     post.stats.comments += 1;
     await this.postRepo.save(post);
 
-    return savedComment;
+    // Fetch comment with author info using aggregation
+    const commentWithAuthor = await this.commentRepo.aggregate([
+      { $match: { _id: new ObjectId(savedComment._id.toString()) } },
+      {
+        $lookup: {
+          from: 'user',
+          localField: 'author_id',
+          foreignField: '_id',
+          as: 'authorDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$authorDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          post_id: 1,
+          content: 1,
+          parent_id: 1,
+          liked_by: 1,
+          created_at: 1,
+          author: {
+            id: '$authorDetails._id',
+            fullName: '$authorDetails.fullName',
+            avatar: '$authorDetails.avatar'
+          }
+        }
+      }
+    ]).toArray();
+
+    return commentWithAuthor.length > 0 ? commentWithAuthor[0] : savedComment;
   }
 
   async remove(postId: string, userId: string, isAdmin: boolean) {
@@ -184,15 +268,59 @@ export class ForumService {
   }
 
   /**
-   * Lấy chi tiết bài viết kèm theo thông tin tóm tắt hành trình (nếu có)
+   * Lấy chi tiết bài viết kèm theo thông tin tóm tắt hành trình (nếu có) và các bình luận
    */
   async getPostDetail(postId: string, userId?: string) {
-    const post = await this.postRepo.findOne({ where: { _id: new ObjectId(postId) } });
-    if (!post) throw new NotFoundException('Bài viết không tồn tại');
+    // Fetch post with author info using aggregation
+    const postData = await this.postRepo.aggregate([
+      { $match: { _id: new ObjectId(postId) } },
+      {
+        $lookup: {
+          from: 'user',
+          localField: 'author_id',
+          foreignField: '_id',
+          as: 'authorDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$authorDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          content: 1,
+          images: 1,
+          category: 1,
+          tag_ids: 1,
+          place_ids: 1,
+          journey_id: 1,
+          stats: 1,
+          status: 1,
+          is_pinned: 1,
+          reports_count: 1,
+          created_at: 1,
+          updated_at: 1,
+          author: {
+            id: '$authorDetails._id',
+            fullName: '$authorDetails.fullName',
+            avatar: '$authorDetails.avatar'
+          }
+        }
+      }
+    ]).toArray();
+
+    if (postData.length === 0) {
+      throw new NotFoundException('Bài viết không tồn tại');
+    }
+
+    const post = postData[0];
 
     // Tăng lượt xem
-    post.stats.views += 1;
-    await this.postRepo.save(post);
+    await this.postRepo.update(new ObjectId(postId), { stats: { ...post.stats, views: post.stats.views + 1 } } as any);
 
     // Lấy thông tin tóm tắt hành trình nếu có journey_id
     let journey_summary: any = null;
@@ -219,8 +347,44 @@ export class ForumService {
       }
     }
 
+    // Fetch comments with author info
+    const comments = await this.commentRepo.aggregate([
+      { $match: { post_id: postId } },
+      {
+        $lookup: {
+          from: 'user',
+          localField: 'author_id',
+          foreignField: '_id',
+          as: 'authorDetails'
+        }
+      },
+      {
+        $unwind: {
+          path: '$authorDetails',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          post_id: 1,
+          content: 1,
+          parent_id: 1,
+          liked_by: 1,
+          created_at: 1,
+          author: {
+            id: '$authorDetails._id',
+            fullName: '$authorDetails.fullName',
+            avatar: '$authorDetails.avatar'
+          }
+        }
+      },
+      { $sort: { created_at: -1 } }
+    ]).toArray();
+
     return {
       ...post,
+      comments,
       journey_summary
     };
   }

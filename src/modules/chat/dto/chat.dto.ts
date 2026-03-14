@@ -1,6 +1,7 @@
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { MessageType } from '../entities/chat-message.entity';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { UserMinifiedDto } from '../../users/dto/user-minified.dto';
 
 export class SendMessageDto {
   @ApiPropertyOptional({ description: 'ID của phòng chat (nếu đã có)' })
@@ -35,6 +36,24 @@ export class SendMessageDto {
   @IsOptional()
   @IsString()
   reply_to_id?: string;
+}
+
+/**
+ * ChatMessageResponseDto - Returned when fetching messages with user info embedded
+ * Includes sender fullName and avatar to reduce FE requests
+ */
+export class ChatMessageResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty() room_id: string;
+  @ApiProperty() room_type: string;
+  @ApiProperty() sender_id: string;
+  @ApiProperty({ type: UserMinifiedDto }) sender?: UserMinifiedDto;
+  @ApiPropertyOptional() content?: string;
+  @ApiProperty({ enum: MessageType }) type: MessageType;
+  @ApiPropertyOptional() metadata?: any;
+  @ApiPropertyOptional() reply_to_id?: string;
+  @ApiProperty({ type: [String], default: [] }) reactions: any[];
+  @ApiProperty() created_at: Date;
 }
 
 // [UPDATED] Vote Poll - journey_id thay vì group_id

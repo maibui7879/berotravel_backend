@@ -28,6 +28,7 @@ import { LoginDto } from './dto/login.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { RtGuard } from '../../common/guards/rt.guard';
+import { GoogleAuthGuard } from './guards/google.guard';
 
 @ApiTags('Authentication') 
 @Controller('auth')
@@ -58,7 +59,7 @@ export class AuthController {
 
   @Public()
   @Get('google')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Bắt đầu luồng đăng nhập Google (Frontend chuyển hướng user tới đây)' })
   googleAuth() {
     // Luồng sẽ do passport-google-oauth20 tự động xử lý
@@ -68,19 +69,9 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Google Callback (Google trả data về đây)' })
-  async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
-    // req.user sẽ chứa data mà GoogleStrategy trả về trong hàm `validate`
-    const { user } = req;
-    
-    // Gọi hàm xử lý logic lưu User và sinh Token
-    const authData = await this.authService.googleLogin(user);
-
-    // CHUYỂN HƯỚNG VỀ FRONTEND KÈM THEO TOKEN (Tuỳ chỉnh URL cho Frontend của bạn)
-    // Ví dụ URL Frontend: http://localhost:3000/auth/success
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const redirectUrl = `${frontendUrl}/auth/success?access_token=${authData.access_token}&refresh_token=${authData.refresh_token}`;
-    
-    return res.redirect(redirectUrl);
+  async googleAuthRedirect(@Req() req) {
+    // Trả về thẳng object chứa tokens thay vì redirect
+    return await this.authService.googleLogin(req.user); 
   }
 
   // ==================== TOKEN MGMT ====================

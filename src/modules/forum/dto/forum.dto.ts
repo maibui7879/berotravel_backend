@@ -2,6 +2,7 @@ import { IsString, IsNotEmpty, IsEnum, IsOptional, IsArray, IsNumber, Min, IsDat
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ForumCategory } from '../entities/forum.entity';
 import { Type } from 'class-transformer';
+import { UserMinifiedDto } from '../../users/dto/user-minified.dto';
 
 export enum PostSortBy {
   LATEST = 'latest',     // Mới nhất
@@ -44,8 +45,44 @@ export class CreatePostDto {
   @ApiPropertyOptional() @IsString() @IsOptional() journey_id?: string;
 }
 
+/**
+ * ForumPostResponseDto - Returned with author info embedded
+ * Includes author fullName and avatar to reduce FE requests
+ */
+export class ForumPostResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty() title: string;
+  @ApiProperty() content: string;
+  @ApiProperty({ type: UserMinifiedDto }) author?: UserMinifiedDto;
+  @ApiProperty({ type: [String] }) images: string[];
+  @ApiProperty({ enum: ForumCategory }) category: ForumCategory;
+  @ApiProperty({ type: [String] }) tag_ids: string[];
+  @ApiProperty({ type: [String] }) place_ids: string[];
+  @ApiPropertyOptional() journey_id?: string;
+  @ApiProperty() stats: { likes: number; views: number; comments: number };
+  @ApiProperty() status: string;
+  @ApiProperty() is_pinned: boolean;
+  @ApiProperty() reports_count: number;
+  @ApiProperty() created_at: Date;
+  @ApiProperty() updated_at: Date;
+}
+
 export class CreateCommentDto {
   @ApiProperty() @IsString() @IsNotEmpty() content: string;
   @ApiPropertyOptional() @IsString() @IsOptional() parent_id?: string;
+}
+
+/**
+ * ForumCommentResponseDto - Returned with author info embedded
+ * Includes author fullName and avatar to reduce FE requests
+ */
+export class ForumCommentResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty() post_id: string;
+  @ApiProperty() content: string;
+  @ApiProperty({ type: UserMinifiedDto }) author?: UserMinifiedDto;
+  @ApiPropertyOptional() parent_id?: string;
+  @ApiProperty() liked_by: string[];
+  @ApiProperty() created_at: Date;
 }
 

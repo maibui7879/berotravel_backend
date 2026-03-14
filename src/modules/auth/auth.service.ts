@@ -72,25 +72,37 @@ export class AuthService {
 
   // ===== THÊM LOGIC XỬ LÝ GOOGLE LOGIN =====
   async googleLogin(googleUser: any) {
-    if (!googleUser || !googleUser.email) {
+    // Xử lý lấy email từ emails array hoặc email field
+    const email = (googleUser?.emails?.[0]?.value || googleUser?.email || '').toLowerCase();
+    
+    if (!email) {
       throw new ForbiddenException('Không lấy được thông tin email từ Google');
     }
 
-    const email = googleUser.email.toLowerCase();
     let user = await this.userRepository.findOneBy({ email });
     let isNewUser = false;
+
+    // Lấy avatar từ photos array
+    const avatar = googleUser?.photos?.[0]?.value || googleUser?.picture;
+    
+    // Lấy Google ID
+    const googleId = googleUser?.id || googleUser?.providerId;
 
     if (!user) {
       // User chưa tồn tại -> Tạo mới (Đăng ký bằng Google)
       isNewUser = true;
+      const fullName = googleUser?.displayName || 
+                       `${googleUser?.name?.givenName || ''} ${googleUser?.name?.familyName || ''}`.trim() ||
+                       email.split('@')[0];
+      
       const newUser = {
         email: email,
-        fullName: googleUser.displayName || `${googleUser.firstName} ${googleUser.lastName}`.trim(),
-        avatar: googleUser.picture,
+        fullName: fullName,
+        avatar: avatar,
         role: Role.USER,
         authProviders: [AuthProvider.GOOGLE],
         socialProfile: {
-          googleId: googleUser.providerId
+          providerId: googleId
         },
         created_at: new Date(),
         updated_at: new Date(),
@@ -104,15 +116,14 @@ export class AuthService {
         
         // Khởi tạo socialProfile nếu chưa có
         if (!user.socialProfile) {
-          user.socialProfile = { providerId: googleUser.providerId };
+          user.socialProfile = { providerId: googleId };
         } else {
-          user.socialProfile.providerId = googleUser.providerId;
+          user.socialProfile.providerId = googleId;
         }
-        user.socialProfile.providerId = googleUser.providerId;
         
         // Cập nhật avatar nếu User chưa có ảnh đại diện
-        if (!user.avatar && googleUser.picture) {
-           user.avatar = googleUser.picture;
+        if (!user.avatar && avatar) {
+          user.avatar = avatar;
         }
 
         await this.userRepository.save(user);
