@@ -34,7 +34,7 @@ import { ChatMessage } from '../chat/entities/chat-message.entity';
     UsersModule,
     NotificationsModule,
     BookingsModule,
-    ChatModule
+    forwardRef(() => ChatModule)
   ],
   controllers: [JourneysController],
   providers: [

@@ -1,4 +1,4 @@
-import { Entity, ObjectIdColumn, ObjectId, Column, CreateDateColumn } from 'typeorm';
+import { Entity, ObjectIdColumn, ObjectId, Column, CreateDateColumn, Index } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum MessageType {
@@ -23,7 +23,7 @@ export class ChatMessage {
   _id: ObjectId;
 
   // [UPDATED] Renamed from group_id to journey_id (merged structure)
-  @Column()
+  @Column() @Index()
   room_id: string;
 
   @Column({ type: 'string', default: 'JOURNEY' })
@@ -33,7 +33,7 @@ export class ChatMessage {
   @Column({ nullable: true })
   group_id?: string;
 
-  @Column()
+  @Column() @Index()
   sender_id: string;
 
   @Column({ nullable: true })

@@ -121,7 +121,7 @@ export class ForumComment {
 
   @Column() @Index() post_id: string;
 
-  @Column() author_id: string;
+  @Column() @Index() author_id: string;
 
   @Column() content: string;
 

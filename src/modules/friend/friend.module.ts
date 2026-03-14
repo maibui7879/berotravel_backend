@@ -6,10 +6,12 @@ import { FriendsController } from './friend.controller';
 // 2. Import đúng đường dẫn Entity
 import { Friendship } from './entities/friendship.entity'; 
 import { User } from '../users/entities/user.entity';
+import { ChatModule } from '../chat/chat.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Friendship, User]), 
+    TypeOrmModule.forFeature([Friendship, User]),
+    ChatModule,
   ],
   controllers: [FriendsController],
   providers: [FriendsService],

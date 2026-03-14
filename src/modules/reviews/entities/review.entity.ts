@@ -1,4 +1,4 @@
-import { Entity, ObjectIdColumn, ObjectId, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, ObjectIdColumn, ObjectId, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
 export enum ReviewStatus {
   PUBLISHED = 'PUBLISHED',
@@ -9,8 +9,8 @@ export enum ReviewStatus {
 @Entity('reviews')
 export class Review {
   @ObjectIdColumn() _id: ObjectId;
-  @Column() place_id: string;
-  @Column() user_id: string;
+  @Column() @Index() place_id: string;
+  @Column() @Index() user_id: string;
 
   @Column('json')
   criteria: {

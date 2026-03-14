@@ -4,11 +4,14 @@ import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 import { Friendship, FriendStatus } from './entities/friendship.entity';
 import { User } from '../users/entities/user.entity';
+import { ChatService } from '../chat/chat.service';
+
 @Injectable()
 export class FriendsService {
   constructor(
     @InjectRepository(Friendship) private readonly friendRepo: MongoRepository<Friendship>,
     @InjectRepository(User) private readonly userRepo: MongoRepository<User>,
+    private readonly chatService: ChatService,
   ) {}
 
   // 1. Gửi lời mời kết bạn
@@ -38,7 +41,14 @@ export class FriendsService {
         if (existing.recipient_id === requesterId) {
           existing.status = FriendStatus.ACCEPTED;
           await this.friendRepo.save(existing);
-          return { success: true, status: FriendStatus.ACCEPTED, message: 'Hai bạn đã trở thành bạn bè' };
+          
+          // [NEW] Tự động tạo room chat
+          await this.chatService.getOrCreateDirectRoom(
+            existing.requester_id,
+            existing.recipient_id
+          );
+          
+          return { success: true, status: FriendStatus.ACCEPTED, message: 'Hai bạn đã trở thành bạn bè', chat_created: true };
         }
         // Nếu mình là người GỬI của lời mời cũ -> Báo lỗi như cũ
         throw new BadRequestException('Bạn đã gửi lời mời này trước đó rồi');
@@ -65,7 +75,14 @@ async respondRequest(userId: string, friendshipId: string, status: FriendStatus)
   if (status === FriendStatus.ACCEPTED) {
     friendship.status = FriendStatus.ACCEPTED;
     await this.friendRepo.save(friendship);
-    return { success: true, status: FriendStatus.ACCEPTED };
+    
+    // [NEW] Tự động tạo room chat cho 2 người bạn
+    await this.chatService.getOrCreateDirectRoom(
+      friendship.requester_id,
+      friendship.recipient_id
+    );
+    
+    return { success: true, status: FriendStatus.ACCEPTED, chat_created: true };
   } else {
     await this.friendRepo.delete(friendship._id);
     return { success: true, message: 'Đã từ chối lời mời' };
