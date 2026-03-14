@@ -92,7 +92,7 @@ export class FavoritesService {
     const friendIds = friends.map(f => f._id.toString());
     
     // Map friends info
-    const friendMap = new Map<string, User>();
+    const friendMap = new Map<string, any>();
     friends.forEach(f => friendMap.set(f._id.toString(), f));
 
     // 2. Tìm like

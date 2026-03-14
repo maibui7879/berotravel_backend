@@ -14,12 +14,18 @@ export class FriendsService {
     private readonly chatService: ChatService,
   ) {}
 
-  // 1. Gửi lời mời kết bạn
+  // ==========================================
+  // 1. GỬI LỜI MỜI KẾT BẠN
+  // ==========================================
   async sendRequest(requesterId: string, recipientId: string) {
-    if (requesterId === recipientId) throw new BadRequestException('Không thể kết bạn với chính mình');
+    if (requesterId === recipientId) {
+      throw new BadRequestException('Không thể kết bạn với chính mình');
+    }
 
     const recipient = await this.userRepo.findOne({ where: { _id: new ObjectId(recipientId) } });
-    if (!recipient) throw new NotFoundException('Người dùng không tồn tại');
+    if (!recipient) {
+      throw new NotFoundException('Người dùng không tồn tại');
+    }
 
     // Kiểm tra mối quan hệ hiện tại giữa 2 người
     const existing = await this.friendRepo.findOne({
@@ -32,171 +38,217 @@ export class FriendsService {
     });
 
     if (existing) {
-      if (existing.status === FriendStatus.ACCEPTED) throw new BadRequestException('Đã là bạn bè');
-      if (existing.status === FriendStatus.BLOCKED) throw new BadRequestException('Không thể gửi lời mời');
+      if (existing.status === FriendStatus.ACCEPTED) {
+        throw new BadRequestException('Đã là bạn bè');
+      }
+      if (existing.status === FriendStatus.BLOCKED) {
+        throw new BadRequestException('Không thể gửi lời mời. Người dùng này đã bị chặn hoặc đã chặn bạn.');
+      }
 
-      // Xử lý logic chồng chéo
+      // Xử lý logic chồng chéo khi có lời mời đang chờ (PENDING)
       if (existing.status === FriendStatus.PENDING) {
-        // Nếu mình là người NHẬN của lời mời cũ, mà giờ lại gửi lại -> Tự động CHẤP NHẬN
+        // TH1: Mình là người NHẬN của lời mời cũ, mà giờ lại gửi lại -> Tự động CHẤP NHẬN
         if (existing.recipient_id === requesterId) {
           existing.status = FriendStatus.ACCEPTED;
           await this.friendRepo.save(existing);
           
-          // [NEW] Tự động tạo room chat
-          await this.chatService.getOrCreateDirectRoom(
-            existing.requester_id,
-            existing.recipient_id
-          );
+          // Tự động tạo room chat
+          await this.chatService.getOrCreateDirectRoom(existing.requester_id, existing.recipient_id);
           
           return { success: true, status: FriendStatus.ACCEPTED, message: 'Hai bạn đã trở thành bạn bè', chat_created: true };
         }
-        // Nếu mình là người GỬI của lời mời cũ -> Báo lỗi như cũ
+        
+        // TH2: Mình là người GỬI của lời mời cũ -> Báo lỗi
         throw new BadRequestException('Bạn đã gửi lời mời này trước đó rồi');
       }
     }
 
-    // Nếu chưa có dữ liệu, tạo mới như bình thường
+    // Nếu chưa có dữ liệu, tạo mới lời mời
     const friendship = this.friendRepo.create({
       requester_id: requesterId,
       recipient_id: recipientId,
       status: FriendStatus.PENDING
     });
 
-    return await this.friendRepo.save(friendship);
-  }
-
-async respondRequest(userId: string, friendshipId: string, status: FriendStatus) {
-  const friendship = await this.friendRepo.findOne({ where: { _id: new ObjectId(friendshipId) } });
-  
-  if (!friendship) throw new NotFoundException('Lời mời không tồn tại');
-  if (friendship.recipient_id !== userId) throw new BadRequestException('Bạn không có quyền xử lý');
-  if (friendship.status !== FriendStatus.PENDING) throw new BadRequestException('Lời mời đã xử lý rồi');
-
-  if (status === FriendStatus.ACCEPTED) {
-    friendship.status = FriendStatus.ACCEPTED;
     await this.friendRepo.save(friendship);
     
-    // [NEW] Tự động tạo room chat cho 2 người bạn
-    await this.chatService.getOrCreateDirectRoom(
-      friendship.requester_id,
-      friendship.recipient_id
-    );
+    return { success: true, status: FriendStatus.PENDING, message: 'Đã gửi lời mời kết bạn' };
+  }
+
+  // ==========================================
+  // 2. PHẢN HỒI LỜI MỜI KẾT BẠN (Chấp nhận / Từ chối)
+  // ==========================================
+  async respondRequest(userId: string, friendshipId: string, status: FriendStatus) {
+    const friendship = await this.friendRepo.findOne({ where: { _id: new ObjectId(friendshipId) } });
     
-    return { success: true, status: FriendStatus.ACCEPTED, chat_created: true };
-  } else {
-    await this.friendRepo.delete(friendship._id);
-    return { success: true, message: 'Đã từ chối lời mời' };
-  }
-}
+    if (!friendship) throw new NotFoundException('Lời mời không tồn tại');
+    if (friendship.recipient_id !== userId) throw new BadRequestException('Bạn không có quyền xử lý lời mời này');
+    if (friendship.status !== FriendStatus.PENDING) throw new BadRequestException('Lời mời này đã được xử lý rồi');
 
-// 6. Tính năng Chặn người dùng (Tách riêng)
-async blockUser(userId: string, targetId: string) {
-  if (userId === targetId) throw new BadRequestException('Không thể tự chặn chính mình');
-
-  // Kiểm tra xem đã có mối quan hệ nào chưa (bạn bè, pending, hoặc đã block)
-  let friendship = await this.friendRepo.findOne({
-    where: {
-      $or: [
-        { requester_id: userId, recipient_id: targetId },
-        { requester_id: targetId, recipient_id: userId }
-      ]
-    } as any
-  });
-
-  if (friendship) {
-    // Cập nhật lại: người thực hiện block luôn là requester_id trong bản ghi BLOCKED
-    friendship.requester_id = userId;
-    friendship.recipient_id = targetId;
-    friendship.status = FriendStatus.BLOCKED;
-  } else {
-    // Tạo mới bản ghi block
-    friendship = this.friendRepo.create({
-      requester_id: userId,
-      recipient_id: targetId,
-      status: FriendStatus.BLOCKED
-    });
+    // Chấp nhận
+    if (status === FriendStatus.ACCEPTED) {
+      friendship.status = FriendStatus.ACCEPTED;
+      await this.friendRepo.save(friendship);
+      
+      // Tự động tạo room chat cho 2 người bạn
+      await this.chatService.getOrCreateDirectRoom(friendship.requester_id, friendship.recipient_id);
+      
+      return { success: true, status: FriendStatus.ACCEPTED, message: 'Đã chấp nhận lời mời', chat_created: true };
+    } 
+    // Từ chối (Xóa bản ghi)
+    else {
+      await this.friendRepo.delete(friendship._id);
+      return { success: true, message: 'Đã từ chối lời mời' };
+    }
   }
 
-  return await this.friendRepo.save(friendship);
-}
-  // 3. Hủy kết bạn
+  // ==========================================
+  // 3. HỦY KẾT BẠN
+  // ==========================================
   async unfriend(userId: string, targetId: string) {
     const friendship = await this.friendRepo.findOne({
-        where: {
-          $or: [
-            { requester_id: userId, recipient_id: targetId },
-            { requester_id: targetId, recipient_id: userId }
-          ]
-        } as any
+      where: {
+        $or: [
+          { requester_id: userId, recipient_id: targetId, status: FriendStatus.ACCEPTED },
+          { requester_id: targetId, recipient_id: userId, status: FriendStatus.ACCEPTED }
+        ]
+      } as any
     });
     
-    if (friendship) {
-        await this.friendRepo.delete(friendship._id);
+    if (!friendship) {
+      throw new BadRequestException('Hai người hiện không phải là bạn bè');
     }
-    return { success: true };
+
+    await this.friendRepo.delete(friendship._id);
+    return { success: true, message: 'Đã hủy kết bạn' };
   }
 
-  // 4. Lấy danh sách bạn bè
+  // ==========================================
+  // 4. LẤY DANH SÁCH BẠN BÈ (ACCEPTED)
+  // ==========================================
   async getMyFriends(userId: string) {
     // Tìm tất cả record có dính tới mình và status = ACCEPTED
     const connections = await this.friendRepo.find({
-        where: {
-            $or: [
-                { requester_id: userId, status: FriendStatus.ACCEPTED },
-                { recipient_id: userId, status: FriendStatus.ACCEPTED }
-            ]
-        } as any
+      where: {
+        $or: [
+          { requester_id: userId, status: FriendStatus.ACCEPTED },
+          { recipient_id: userId, status: FriendStatus.ACCEPTED }
+        ]
+      } as any
     });
 
-    // Lấy ra ID của người kia
+    if (connections.length === 0) return [];
+
+    // Lấy ra ID của người bạn
     const friendIds = connections.map(c => 
-        c.requester_id === userId ? c.recipient_id : c.requester_id
+      c.requester_id === userId ? c.recipient_id : c.requester_id
     );
 
-    if (friendIds.length === 0) return [];
-
-    // Query User Info
+    // Query thông tin User của những người bạn đó
     const friends = await this.userRepo.find({
-        where: { _id: { $in: friendIds.map(id => new ObjectId(id)) } } as any,
-        select: ['_id', 'fullName', 'avatar', 'email'] // Chỉ lấy info cơ bản
+      where: { _id: { $in: friendIds.map(id => new ObjectId(id)) } } as any,
+      select: ['_id', 'fullName', 'avatar', 'email'] // Chỉ lấy thông tin cơ bản để bảo mật
     });
 
-    return friends;
+    return friends.map(friend => ({
+  _id: friend._id,
+  fullName: friend.fullName,
+  email: friend.email,
+  avatar: friend.avatar || null 
+  }));
   }
 
-  // 5. Lấy danh sách lời mời đã nhận (Pending Requests)
+  // ==========================================
+  // 5. LẤY DANH SÁCH LỜI MỜI CHƯA XỬ LÝ (PENDING)
+  // ==========================================
   async getPendingRequests(userId: string) {
+    // Chỉ lấy những lời mời mà mình là người NHẬN
     const requests = await this.friendRepo.find({
-        where: { recipient_id: userId, status: FriendStatus.PENDING }
+      where: { recipient_id: userId, status: FriendStatus.PENDING }
     });
 
-    // Populate info người gửi
+    if (requests.length === 0) return [];
+
+    // Populate thông tin người GỬI
     const senderIds = requests.map(r => new ObjectId(r.requester_id));
     const senders = await this.userRepo.find({
-        where: { _id: { $in: senderIds } } as any,
-        select: ['_id', 'fullName', 'avatar']
+      where: { _id: { $in: senderIds } } as any,
+      select: ['_id', 'fullName', 'avatar']
     });
 
+    // Map dữ liệu lại để trả về cho Front-end
     return requests.map(req => {
-        const sender = senders.find(s => s._id.toString() === req.requester_id);
-        return { ...req, sender };
+      const senderInfo = senders.find(s => s._id.toString() === req.requester_id);
+      return { 
+        id: req._id, // ID của lời mời
+        requester_id: req.requester_id,
+        recipient_id: req.recipient_id,
+        status: req.status,
+        created_at: (req as any).created_at,
+        sender: senderInfo || null // Dữ liệu của người gửi
+      };
     });
   }
-  async unblock(userId: string, targetId: string) {
-  const friendship = await this.friendRepo.findOne({
-    where: {
-      requester_id: userId,
-      recipient_id: targetId,
-      status: FriendStatus.BLOCKED
-    } as any
-  });
 
-  if (!friendship) {
-    throw new NotFoundException('Không tìm thấy bản ghi chặn người dùng này');
+  // ==========================================
+  // 6. CHẶN NGƯỜI DÙNG (BLOCK)
+  // ==========================================
+  async blockUser(userId: string, targetId: string) {
+    if (userId === targetId) {
+      throw new BadRequestException('Không thể tự chặn chính mình');
+    }
+
+    // Kiểm tra xem đã có mối quan hệ nào chưa (bạn bè, pending, hoặc đã block)
+    let friendship = await this.friendRepo.findOne({
+      where: {
+        $or: [
+          { requester_id: userId, recipient_id: targetId },
+          { requester_id: targetId, recipient_id: userId }
+        ]
+      } as any
+    });
+
+    if (friendship) {
+      // Nếu đã bị chặn sẵn thì không làm gì thêm
+      if (friendship.status === FriendStatus.BLOCKED && friendship.requester_id === userId) {
+        return { success: true, message: 'Người dùng này đã bị chặn từ trước' };
+      }
+
+      // Cập nhật lại: người thực hiện block luôn là requester_id trong bản ghi BLOCKED
+      friendship.requester_id = userId;
+      friendship.recipient_id = targetId;
+      friendship.status = FriendStatus.BLOCKED;
+    } else {
+      // Tạo mới bản ghi block
+      friendship = this.friendRepo.create({
+        requester_id: userId,
+        recipient_id: targetId,
+        status: FriendStatus.BLOCKED
+      });
+    }
+
+    await this.friendRepo.save(friendship);
+    return { success: true, message: 'Đã chặn người dùng' };
   }
 
-  await this.friendRepo.delete(friendship._id);
-  return { success: true, message: 'Đã gỡ chặn thành công' };
-}
+  // ==========================================
+  // 7. BỎ CHẶN NGƯỜI DÙNG (UNBLOCK)
+  // ==========================================
+  async unblock(userId: string, targetId: string) {
+    const friendship = await this.friendRepo.findOne({
+      where: {
+        requester_id: userId, // Chỉ người block mới có quyền gỡ block
+        recipient_id: targetId,
+        status: FriendStatus.BLOCKED
+      } as any
+    });
 
+    if (!friendship) {
+      throw new NotFoundException('Không tìm thấy bản ghi chặn người dùng này (hoặc bạn không phải người chặn)');
+    }
+
+    // Xóa bản ghi block, hai người quay về trạng thái "người lạ"
+    await this.friendRepo.delete(friendship._id);
+    return { success: true, message: 'Đã gỡ chặn thành công' };
+  }
 }

@@ -112,9 +112,14 @@ export class ForumService {
     const pipeline: any[] = [
       { $match: query },
       {
+        $addFields: {
+          author_id_obj: { $toObjectId: '$author_id' }
+        }
+      },
+      {
         $lookup: {
-          from: 'user',
-          localField: 'author_id',
+          from: 'users', // Fixed collection name
+          localField: 'author_id_obj',
           foreignField: '_id',
           as: 'authorDetails'
         }
@@ -223,9 +228,14 @@ export class ForumService {
     const commentWithAuthor = await this.commentRepo.aggregate([
       { $match: { _id: new ObjectId(savedComment._id.toString()) } },
       {
+        $addFields: {
+          author_id_obj: { $toObjectId: '$author_id' }
+        }
+      },
+      {
         $lookup: {
-          from: 'user',
-          localField: 'author_id',
+          from: 'users', // Fixed collection name
+          localField: 'author_id_obj',
           foreignField: '_id',
           as: 'authorDetails'
         }
@@ -275,9 +285,14 @@ export class ForumService {
     const postData = await this.postRepo.aggregate([
       { $match: { _id: new ObjectId(postId) } },
       {
+        $addFields: {
+          author_id_obj: { $toObjectId: '$author_id' }
+        }
+      },
+      {
         $lookup: {
-          from: 'user',
-          localField: 'author_id',
+          from: 'users', // Fixed collection name
+          localField: 'author_id_obj',
           foreignField: '_id',
           as: 'authorDetails'
         }
@@ -351,9 +366,14 @@ export class ForumService {
     const comments = await this.commentRepo.aggregate([
       { $match: { post_id: postId } },
       {
+        $addFields: {
+          author_id_obj: { $toObjectId: '$author_id' }
+        }
+      },
+      {
         $lookup: {
-          from: 'user',
-          localField: 'author_id',
+          from: 'users', // Fixed collection name
+          localField: 'author_id_obj',
           foreignField: '_id',
           as: 'authorDetails'
         }

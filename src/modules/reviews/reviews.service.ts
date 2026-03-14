@@ -77,18 +77,21 @@ export class ReviewsService {
     const pipeline: any[] = [
       { $match: matchStage },
       {
+        // BƯỚC 1: Ép kiểu string sang ObjectId trước khi lookup
+        $addFields: {
+          user_id_obj: { $toObjectId: '$user_id' }
+        }
+      },
+      {
         $lookup: {
-          from: 'user', // MongoDB collection name for users
-          localField: 'user_id',
+          from: 'users', // BƯỚC 2: Sửa thành 'users' (số nhiều)
+          localField: 'user_id_obj', // Dùng trường đã ép kiểu
           foreignField: '_id',
           as: 'userDetails'
         }
       },
       {
-        $unwind: {
-          path: '$userDetails',
-          preserveNullAndEmptyArrays: true // In case user doesn't exist
-        }
+        $unwind: { path: '$userDetails', preserveNullAndEmptyArrays: true }
       },
       {
         $project: {

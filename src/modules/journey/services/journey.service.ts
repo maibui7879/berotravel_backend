@@ -24,6 +24,7 @@ import { JourneyUtils } from './journey-utils';
 import { NotificationType } from '../../notification/entities/notification.entity';
 import { BookingsService } from '../../bookings/bookings.service';
 import { ChatMessage, MessageType } from 'src/modules/chat/entities/chat-message.entity';
+import { User } from '../../../modules/users/entities/user.entity';
 
 export interface AlbumItem {
   source: 'check-in' | 'chat';
