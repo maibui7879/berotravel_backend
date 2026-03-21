@@ -76,8 +76,9 @@ export class ForumService {
     return savedPost;
   }
 
-  async findAll(filter: PostSearchFilterDto) {
-    const { search, category, place_id, author_id, tag_id, sortBy, page = 1, limit = 10 } = filter;
+async findAll(filter: PostSearchFilterDto) {
+    // Lưu ý: Đã đổi tag_id thành tag theo DTO mới
+    const { search, category, place_id, author_id, tag, sortBy, page = 1, limit = 10 } = filter;
 
     const query: any = { status: PostStatus.PUBLISHED };
 
@@ -91,7 +92,20 @@ export class ForumService {
     if (category) query.category = category;
     if (author_id) query.author_id = author_id;
     if (place_id) query.place_ids = { $in: [place_id] };
-    if (tag_id) query.tag_ids = { $in: [tag_id] };
+    
+    // Logic mới: Tìm kiếm bằng tên/từ khóa tag
+    if (tag) {
+      const matchedTags = await this.tagRepo.find({
+        where: { name: { $regex: tag, $options: 'i' } as any }
+      });
+
+      if (matchedTags.length > 0) {
+        const matchedTagIds = matchedTags.map(t => t._id.toString());
+        query.tag_ids = { $in: matchedTagIds };
+      } else {
+        query.tag_ids = { $in: [] }; 
+      }
+    }
 
     let sortOrder: any = { is_pinned: -1 }; 
 

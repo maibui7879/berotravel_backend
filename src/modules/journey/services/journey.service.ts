@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 
-import { Journey, JourneyDay, JourneyStop, CostType, StopStatus, JourneyVisibility, JourneyMemberRole, JourneyMember, JourneyJoinRequest } from '../entities/journey.entity';
+import { Journey, JourneyDay, JourneyStop, CostType, StopStatus, JourneyVisibility, JourneyMemberRole, JourneyMember, JourneyJoinRequest, JourneyTag } from '../entities/journey.entity';
 import { Place } from '../../places/entities/place.entity';
 import { CreateJourneyDto } from '../dto/create-journey.dto';
 import { UpdateJourneyDto } from '../dto/update-journey.dto';
@@ -90,6 +90,8 @@ export class JourneysService {
       members: [hostMember],
       invite_code: inviteCode,
       join_requests: [],
+      avatar: dto.avatar || null, // Lưu avatar
+      tags: dto.tags || [],
       total_budget: 0,
       cost_per_person: 0,
       planned_members_count: dto.planned_members_count || 1,
@@ -115,19 +117,51 @@ export class JourneysService {
     });
   }
 
-  async getPublicJourneys(search?: string): Promise<Journey[]> {
+  async getPublicJourneys(
+    search?: string,
+    tag?: JourneyTag,
+    minPrice?: number,
+    maxPrice?: number,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<Journey[]> {
     const filter: any = { 
-        visibility: JourneyVisibility.PUBLIC 
+      visibility: JourneyVisibility.PUBLIC 
     };
 
+    // 1. Lọc theo tên (Search)
     if (search) {
-        filter.name = { $regex: new RegExp(search, 'i') };
+      filter.name = { $regex: new RegExp(search, 'i') };
+    }
+
+    // 2. Lọc theo Tag
+    if (tag) {
+      filter.tags = { $in: [tag] };
+    }
+
+    // 3. Lọc theo chi phí ước tính (cost_per_person)
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      filter.cost_per_person = {};
+      if (minPrice !== undefined) filter.cost_per_person.$gte = minPrice;
+      if (maxPrice !== undefined) filter.cost_per_person.$lte = maxPrice;
+    }
+
+    // 4. Lọc theo thời gian diễn ra (Hành trình nằm TRONG khoảng start và end)
+    // Logic: start_date của hành trình >= startDate của filter 
+    // VÀ end_date của hành trình <= endDate của filter
+    if (startDate || endDate) {
+      if (startDate) {
+        filter.start_date = { $gte: new Date(startDate) };
+      }
+      if (endDate) {
+        filter.end_date = { $lte: new Date(endDate) };
+      }
     }
 
     return await this.journeyRepo.find({
-        where: filter,
-        order: { created_at: -1 } as any,
-        take: 50 
+      where: filter,
+      order: { created_at: -1 } as any,
+      take: 50 
     });
   }
 

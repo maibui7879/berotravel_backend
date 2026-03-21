@@ -24,7 +24,7 @@ export class PostSearchFilterDto {
   @IsOptional() @IsString() author_id?: string;
 
   @ApiPropertyOptional({ description: 'Lọc theo tag' })
-  @IsOptional() @IsString() tag_id?: string;
+  @IsOptional() @IsString() tag?: string;
 
   @ApiPropertyOptional({ enum: PostSortBy, default: PostSortBy.LATEST })
   @IsOptional() @IsEnum(PostSortBy) sortBy?: PostSortBy = PostSortBy.LATEST;

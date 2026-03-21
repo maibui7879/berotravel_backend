@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsString, IsDateString, IsOptional, IsNumber, IsArray, Min, IsEnum } from 'class-validator';
-import { JourneyVisibility } from '../entities/journey.entity';
+import { JourneyTag, JourneyVisibility } from '../entities/journey.entity';
 
 export class CreateJourneyDto {
   @ApiProperty({ example: 'Hành trình khám phá Phú Thọ' }) 
@@ -28,4 +28,15 @@ export class CreateJourneyDto {
   @IsOptional()
   @IsEnum(JourneyVisibility)
   visibility?: JourneyVisibility;
+
+  @ApiPropertyOptional({ example: 'https://cloudinary.com/v123/avatar.jpg' })
+  @IsOptional()
+  @IsString()
+  avatar?: string;
+
+  @ApiPropertyOptional({ example: ['Biển', 'Gia đình'], type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: JourneyTag[];
 }

@@ -10,7 +10,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { AtGuard } from '../../common/guards/at.guard';
 import { RolesGuard } from '../../common/guards/role.guard';
-
+import { JourneyTag, JourneyVisibility } from './entities/journey.entity';
 import { CreateJourneyDto } from './dto/create-journey.dto';
 import { UpdateJourneyDto } from './dto/update-journey.dto';
 import { AddStopDto } from './dto/add-stop.dto';
@@ -37,13 +37,32 @@ export class JourneysController {
   ) {}
 
 
-  @Get('public')
-  @Public() // Cho phép Guest xem
-  @ApiOperation({ summary: '17. [SOCIAL] Lấy danh sách các chuyến đi Công khai (Feed)' })
-  @ApiQuery({ name: 'search', required: false, description: 'Tìm kiếm theo tên chuyến đi' })
-  getPublicFeed(@Query('search') search?: string) {
-    return this.journeysService.getPublicJourneys(search);
-  }
+@Get('public')
+@Public()
+@ApiOperation({ summary: 'Lấy danh sách các chuyến đi Công khai với bộ lọc nâng cao' })
+@ApiQuery({ name: 'search', required: false, description: 'Tìm theo tên' })
+@ApiQuery({ name: 'tag', enum: JourneyTag, required: false, description: 'Lọc theo thể loại' })
+@ApiQuery({ name: 'minPrice', type: Number, required: false, description: 'Giá tối thiểu' })
+@ApiQuery({ name: 'maxPrice', type: Number, required: false, description: 'Giá tối đa' })
+@ApiQuery({ name: 'startDate', type: String, required: false, description: 'Từ ngày (YYYY-MM-DD)' })
+@ApiQuery({ name: 'endDate', type: String, required: false, description: 'Đến ngày (YYYY-MM-DD)' })
+getPublicFeed(
+  @Query('search') search?: string,
+  @Query('tag') tag?: JourneyTag,
+  @Query('minPrice') minPrice?: string,
+  @Query('maxPrice') maxPrice?: string,
+  @Query('startDate') startDate?: string,
+  @Query('endDate') endDate?: string,
+) {
+  return this.journeysService.getPublicJourneys(
+    search, 
+    tag, 
+    minPrice ? parseInt(minPrice) : undefined,
+    maxPrice ? parseInt(maxPrice) : undefined,
+    startDate,
+    endDate
+  );
+}
 
   @Get('my-journeys')
   @ApiBearerAuth()

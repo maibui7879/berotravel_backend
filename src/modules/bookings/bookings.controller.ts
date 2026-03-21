@@ -5,8 +5,28 @@ import { Public } from '../../common/decorators/public.decorator';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/role.guard';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { 
+  ApiTags, 
+  ApiOperation, 
+  ApiBearerAuth, 
+  ApiResponse, 
+  ApiParam, 
+  ApiBody,
+  ApiQuery
+} from '@nestjs/swagger';
+import { Booking } from './entities/booking.entity';
+import { InventoryUnit } from './entities/inventory-unit.entity';
+import { Voucher } from './entities/voucher.entity';
+import { Promotion } from './entities/promotion.entity';
+import { InventoryTransaction } from './entities/inventory-transaction.entity';
+import { 
+  CreateInventoryUnitDto, 
+  UpdatePriceOverrideDto, 
+  UpdateInventoryQuantityDto, 
+  TogglePromotionDto,
+  ValidateVoucherDto 
+} from './dto/merchant-booking.dto';
 
 @ApiTags('Bookings & Inventory')
 @Controller('bookings')
@@ -20,13 +40,16 @@ export class BookingsController {
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo loại phòng/bàn (Merchant)' })
-  createUnit(@Body() dto: any) {
+  @ApiResponse({ status: 201, type: InventoryUnit })
+  createUnit(@Body() dto: CreateInventoryUnitDto) {
     return this.bookingsService.createUnit(dto);
   }
 
   @Public()
   @Get('units/place/:placeId')
   @ApiOperation({ summary: 'Lấy danh sách phòng/bàn của một địa điểm (Công khai)' })
+  @ApiParam({ name: 'placeId', description: 'ID của địa điểm' })
+  @ApiResponse({ status: 200, type: [InventoryUnit] })
   findUnits(@Param('placeId') placeId: string) {
     return this.bookingsService.findUnitsByPlace(placeId);
   }
@@ -35,7 +58,8 @@ export class BookingsController {
   @Roles(Role.ADMIN, Role.MERCHANT)
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
-  updateUnit(@Param('id') id: string, @Body() dto: any, @GetCurrentUser() user: any) {
+  @ApiOperation({ summary: 'Cập nhật thông tin loại phòng/bàn' })
+  updateUnit(@Param('id') id: string, @Body() dto: Partial<CreateInventoryUnitDto>, @GetCurrentUser() user: any) {
     return this.bookingsService.updateUnit(id, dto, user);
   }
 
@@ -43,6 +67,7 @@ export class BookingsController {
   @Roles(Role.ADMIN, Role.MERCHANT)
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xóa loại phòng/bàn' })
   removeUnit(@Param('id') id: string, @GetCurrentUser() user: any) {
     return this.bookingsService.deleteUnit(id, user);
   }
@@ -54,13 +79,15 @@ export class BookingsController {
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Sửa giá cho ngày cụ thể' })
-  setPrice(@Body() dto: any, @GetCurrentUser() user: any) {
+  setPrice(@Body() dto: UpdatePriceOverrideDto, @GetCurrentUser() user: any) {
     return this.bookingsService.updatePriceOverride(dto, user);
   }
 
   @Public()
   @Get('availability/place/:placeId')
   @ApiOperation({ summary: 'Xem tình trạng trống của TOÀN BỘ địa điểm theo ngày' })
+  @ApiQuery({ name: 'check_in', example: '2026-01-01' })
+  @ApiQuery({ name: 'check_out', example: '2026-01-05', required: false })
   getPlaceAvail(
     @Param('placeId') placeId: string,
     @Query('check_in') checkIn: string,
@@ -69,17 +96,21 @@ export class BookingsController {
     return this.bookingsService.getPlaceAvailability(placeId, checkIn, checkOut);
   }
 
-  // --- NGHIỆP VỤ BOOKING (USER & MERCHANT) ---
+  // --- NGHIỆP VỤ BOOKING ---
 
   @Post()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Người dùng đặt chỗ' })
+  @ApiResponse({ status: 201, description: 'Đặt chỗ thành công', type: Booking })
+  @ApiResponse({ status: 400, description: 'Hết chỗ hoặc dữ liệu không hợp lệ' })
   create(@Body() dto: CreateBookingDto, @GetCurrentUser('sub') userId: string) {
     return this.bookingsService.create(dto, userId);
   }
 
   @Get('my-bookings')
   @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xem danh sách đơn đặt của tôi' })
+  @ApiResponse({ status: 200, type: [Booking] })
   findMyBookings(@GetCurrentUser('sub') userId: string) {
     return this.bookingsService.findMyBookings(userId);
   }
@@ -89,29 +120,28 @@ export class BookingsController {
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Merchant xem các đơn của chỗ mình' })
+  @ApiResponse({ status: 200, type: [Booking] })
   findByPlace(@Param('placeId') placeId: string, @GetCurrentUser() user: any) {
     return this.bookingsService.findByPlace(placeId, user);
   }
 
-
   @Patch(':id/cancel')
   @ApiBearerAuth()
+  @ApiOperation({ summary: 'Hủy đơn đặt chỗ' })
   cancel(@Param('id') id: string, @GetCurrentUser() user: any) {
     return this.bookingsService.cancel(id, user);
   }
 
-  // ==========================================
-  // INVENTORY MANAGEMENT (MERCHANT)
-  // ==========================================
+  // --- INVENTORY MANAGEMENT ---
 
   @Patch('inventory/:unitId/update-quantity')
   @Roles(Role.ADMIN, Role.MERCHANT)
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Merchant cập nhật số lượng phòng/bàn trống theo ngày (Real-time)' })
+  @ApiOperation({ summary: 'Cập nhật số lượng trống theo ngày' })
   updateInventoryQuantity(
     @Param('unitId') unitId: string,
-    @Body() dto: any, // { quantity, dateFrom, dateTo?, reason? }
+    @Body() dto: UpdateInventoryQuantityDto,
     @GetCurrentUser() user: any
   ) {
     return this.bookingsService.updateInventoryQuantity(
@@ -128,7 +158,8 @@ export class BookingsController {
   @Roles(Role.ADMIN, Role.MERCHANT)
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xem lịch sử giao dịch kho (Inventory Transactions)' })
+  @ApiOperation({ summary: 'Xem lịch sử giao dịch kho' })
+  @ApiResponse({ status: 200, type: [InventoryTransaction] })
   getInventoryTransactions(
     @Param('placeId') placeId: string,
     @Query('unitId') unitId?: string,
@@ -137,46 +168,16 @@ export class BookingsController {
     return this.bookingsService.getInventoryTransactions(placeId, unitId, user);
   }
 
-  // ==========================================
-  // VOUCHER MANAGEMENT (MERCHANT)
-  // ==========================================
+  // --- VOUCHER & PROMOTIONS ---
 
   @Post(':placeId/vouchers')
   @Roles(Role.ADMIN, Role.MERCHANT)
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Merchant tạo mã giảm giá' })
-  createVoucher(
-    @Param('placeId') placeId: string,
-    @Body() dto: any,
-    @GetCurrentUser() user: any
-  ) {
+  @ApiResponse({ status: 201, type: Voucher })
+  createVoucher(@Param('placeId') placeId: string, @Body() dto: any, @GetCurrentUser() user: any) {
     return this.bookingsService.createVoucher(placeId, dto, user);
-  }
-
-  @Get(':placeId/vouchers')
-  @Roles(Role.ADMIN, Role.MERCHANT)
-  @UseGuards(RolesGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xem danh sách voucher của địa điểm' })
-  getVouchers(
-    @Param('placeId') placeId: string,
-    @GetCurrentUser() user?: any
-  ) {
-    return this.bookingsService.getVouchers(placeId, user);
-  }
-
-  @Patch('vouchers/:voucherId')
-  @Roles(Role.ADMIN, Role.MERCHANT)
-  @UseGuards(RolesGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Cập nhật voucher' })
-  updateVoucher(
-    @Param('voucherId') voucherId: string,
-    @Body() dto: any,
-    @GetCurrentUser() user?: any
-  ) {
-    return this.bookingsService.updateVoucher(voucherId, dto, user);
   }
 
   @Post('vouchers/:code/validate')
@@ -184,38 +185,19 @@ export class BookingsController {
   @ApiOperation({ summary: 'Kiểm tra & áp dụng mã giảm giá' })
   validateVoucher(
     @Param('code') code: string,
-    @Body() dto: any, // { placeId, orderValue }
+    @Body() dto: ValidateVoucherDto,
   ) {
-    return this.bookingsService.validateVoucher(code, dto.placeId, dto.orderValue);
+    return this.bookingsService.validateVoucher(code, dto.place_id, dto.orderValue);
   }
-
-  // ==========================================
-  // PROMOTION MANAGEMENT (MERCHANT)
-  // ==========================================
 
   @Post(':placeId/promotions')
   @Roles(Role.ADMIN, Role.MERCHANT)
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Merchant tạo chương trình khuyến mãi (Happy Hour, Flash Sale, v.v.)' })
-  createPromotion(
-    @Param('placeId') placeId: string,
-    @Body() dto: any,
-    @GetCurrentUser() user: any
-  ) {
+  @ApiOperation({ summary: 'Merchant tạo chương trình khuyến mãi' })
+  @ApiResponse({ status: 201, type: Promotion })
+  createPromotion(@Param('placeId') placeId: string, @Body() dto: any, @GetCurrentUser() user: any) {
     return this.bookingsService.createPromotion(placeId, dto, user);
-  }
-
-  @Get(':placeId/promotions')
-  @Roles(Role.ADMIN, Role.MERCHANT)
-  @UseGuards(RolesGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xem danh sách chương trình khuyến mãi' })
-  getPromotions(
-    @Param('placeId') placeId: string,
-    @GetCurrentUser() user?: any
-  ) {
-    return this.bookingsService.getPromotions(placeId, user);
   }
 
   @Patch('promotions/:promotionId/toggle')
@@ -225,7 +207,7 @@ export class BookingsController {
   @ApiOperation({ summary: 'Kích hoạt/Vô hiệu hóa chương trình khuyến mãi' })
   togglePromotion(
     @Param('promotionId') promotionId: string,
-    @Body() dto: any, // { status: 'ACTIVE' | 'PAUSED' | 'ENDED' }
+    @Body() dto: TogglePromotionDto,
     @GetCurrentUser() user?: any
   ) {
     return this.bookingsService.togglePromotion(promotionId, dto.status, user);
@@ -233,11 +215,9 @@ export class BookingsController {
 
   @Public()
   @Get(':placeId/promotions/active')
-  @ApiOperation({ summary: 'Lấy danh sách khuyến mãi đang áp dụng ngay bây giờ' })
-  getActivePromotions(
-    @Param('placeId') placeId: string,
-    @Query('unitId') unitId?: string
-  ) {
+  @ApiOperation({ summary: 'Lấy danh sách khuyến mãi đang áp dụng' })
+  @ApiResponse({ status: 200, type: [Promotion] })
+  getActivePromotions(@Param('placeId') placeId: string, @Query('unitId') unitId?: string) {
     return this.bookingsService.getActivePromotions(placeId, unitId);
   }
 }

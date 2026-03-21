@@ -9,6 +9,23 @@ export interface TransitInfo {
   from_place_id: string;
 }
 
+export enum JourneyTag {
+  BEACH = 'BEACH',          // Biển
+  MOUNTAIN = 'MOUNTAIN',    // Núi
+  FOODIE = 'FOODIE',        // Ẩm thực
+  ADVENTURE = 'ADVENTURE',  // Khám phá/Mạo hiểm
+  RELAX = 'RELAX',          // Nghỉ dưỡng
+  CULTURE = 'CULTURE',      // Văn hóa
+  FAMILY = 'FAMILY',        // Gia đình
+  COUPLE = 'COUPLE',        // Cặp đôi
+  CHILL = 'CHILL',          // Đi chơi/Thư giãn
+  NATURE = 'NATURE',        // Thiên nhiên
+  CITY = 'CITY',            // Thành phố
+  HISTORICAL = 'HISTORICAL', // Lịch sử
+  CHILD_FRIENDLY = 'CHILD_FRIENDLY',
+  AGE_RESTRICTED = 'AGE_RESTRICTED',// Thân thiện với trẻ em
+}
+
 // [NEW] Member role enum (merged from Group)
 export enum JourneyMemberRole {
   HOST = 'HOST',       // Trưởng nhóm/Chủ chuyến đi
@@ -136,6 +153,14 @@ export class Journey {
   @Column('json', { default: [] })
   @ApiProperty({ type: [JourneyJoinRequest] })
   join_requests: JourneyJoinRequest[] = [];
+
+  @Column({ nullable: true })
+  @ApiPropertyOptional({ description: 'Ảnh đại diện của hành trình' })
+  avatar?: string | null;
+
+  @Column('json', { default: [] })
+  @ApiProperty({ type: [String], description: 'Các tag phân loại (ví dụ: biển, núi, nghỉ dưỡng)' })
+  tags: JourneyTag[] = [];
 
   @Column() 
   start_date: Date;
