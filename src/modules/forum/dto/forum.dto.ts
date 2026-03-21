@@ -1,6 +1,6 @@
-import { IsString, IsNotEmpty, IsEnum, IsOptional, IsArray, IsNumber, Min, IsDate} from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum, IsOptional, IsArray, IsNumber, Min, IsDate, IsBoolean} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ForumCategory } from '../entities/forum.entity';
+import { ForumCategory, PostStatus } from '../entities/forum.entity';
 import { Type } from 'class-transformer';
 import { UserMinifiedDto } from '../../users/dto/user-minified.dto';
 
@@ -43,6 +43,16 @@ export class CreatePostDto {
   @ApiPropertyOptional() @IsArray() @IsOptional() images?: string[];
   @ApiPropertyOptional() @IsArray() @IsOptional() place_ids?: string[];
   @ApiPropertyOptional() @IsString() @IsOptional() journey_id?: string;
+  @ApiPropertyOptional({ enum: PostStatus }) 
+  @IsOptional() 
+  @IsEnum(PostStatus) 
+  status?: PostStatus;
+
+  // Bổ sung để nhận is_pinned từ payload (ví dụ: true)
+  @ApiPropertyOptional() 
+  @IsOptional() 
+  @IsBoolean() 
+  is_pinned?: boolean;
 }
 
 /**

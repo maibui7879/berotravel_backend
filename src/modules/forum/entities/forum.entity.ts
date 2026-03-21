@@ -102,7 +102,7 @@ export enum PostSortBy {
   POPULAR = 'popular',   // Nhiều Like nhất
   TRENDING = 'trending', // Nhiều bình luận/lượt xem nhất
 }
-
+@Entity('forum_tags')
 export class ForumTag {
   @ObjectIdColumn() _id: ObjectId;
 

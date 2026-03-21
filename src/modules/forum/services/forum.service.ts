@@ -67,6 +67,8 @@ export class ForumService {
       ...dto,
       author_id: userId,
       tag_ids: autoTagIds,
+      status: dto.status || PostStatus.PUBLISHED, // Ép giá trị mặc định nếu dto không có
+      is_pinned: dto.is_pinned || false,
       liked_by: [],
       stats: { likes: 0, views: 0, comments: 0 }
     });
@@ -77,10 +79,10 @@ export class ForumService {
   }
 
 async findAll(filter: PostSearchFilterDto) {
-    // Lưu ý: Đã đổi tag_id thành tag theo DTO mới
+
     const { search, category, place_id, author_id, tag, sortBy, page = 1, limit = 10 } = filter;
 
-    const query: any = { status: PostStatus.PUBLISHED };
+    const query: any = { status: PostStatus.PUBLISHED  };
 
     if (search) {
       query.$or = [
