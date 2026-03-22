@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Param, Patch, Body, Post } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Param, Patch, Body, Post, Delete } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { AdminDashboardService } from './services/admin-dashboard.service';
 import { PlacesService } from '../places/places.service';
@@ -232,5 +232,90 @@ export class AdminController {
     @GetCurrentUser('sub') adminId: string,
   ) {
     return this.dashboardService.approveMerchantRequest(id, adminId);
+  }
+
+  @Get('users')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Lấy danh sách tất cả Users' })
+  getAllUsers(@Query('page') page: string = '1', @Query('limit') limit: string = '10') {
+    return this.dashboardService.getAllUsers(+page, +limit);
+  }
+
+  @Get('users/:id')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Xem chi tiết 1 User' })
+  getUserById(@Param('id') id: string) {
+    return this.dashboardService.getUserById(id);
+  }
+
+  @Patch('users/:id')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Cập nhật thông tin User (Tùy ý)' })
+  updateUser(@Param('id') id: string, @Body() data: any) {
+    return this.dashboardService.updateUser(id, data);
+  }
+
+  @Delete('users/:id')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Xóa User khỏi hệ thống' })
+  deleteUser(@Param('id') id: string) {
+    return this.dashboardService.deleteUser(id);
+  }
+
+  // ================= ADMIN: CRUD PLACES =================
+
+  @Get('places')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Lấy danh sách tất cả Places' })
+  getAllPlaces(@Query('page') page: string = '1', @Query('limit') limit: string = '10') {
+    return this.dashboardService.getAllPlaces(+page, +limit);
+  }
+
+  @Get('places/:id')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Xem chi tiết 1 Place' })
+  getPlaceById(@Param('id') id: string) {
+    return this.dashboardService.getPlaceById(id);
+  }
+
+  @Patch('places/:id')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Cập nhật thông tin Place (Tùy ý/Không cần xác thực Owner)' })
+  updatePlace(@Param('id') id: string, @Body() data: any) {
+    return this.dashboardService.updatePlace(id, data);
+  }
+
+  @Delete('places/:id')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Xóa Place khỏi hệ thống' })
+  deletePlace(@Param('id') id: string) {
+    return this.dashboardService.deletePlace(id);
+  }
+
+  // ================= ADMIN: FORUM & REPORTS =================
+
+  @Get('forum/reports')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Xem danh sách báo cáo vi phạm diễn đàn' })
+  getForumReports(@Query('page') page: string = '1', @Query('limit') limit: string = '10') {
+    return this.dashboardService.getForumReports(+page, +limit);
+  }
+
+  @Patch('forum/reports/:id/resolve')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Xử lý báo cáo vi phạm (Xóa bài hoặc Bỏ qua)' })
+  @ApiBody({ schema: { properties: { action: { type: 'string', enum: ['DELETE_POST', 'DISMISS'] } } } })
+  resolveForumReport(
+    @Param('id') id: string, 
+    @Body('action') action: 'DELETE_POST' | 'DISMISS'
+  ) {
+    return this.dashboardService.resolveForumReport(id, action);
+  }
+
+  @Delete('forum/comments/:id')
+  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @ApiOperation({ summary: 'ADMIN: Xóa trực tiếp một bình luận vi phạm' })
+  deleteForumComment(@Param('id') id: string) {
+    return this.dashboardService.deleteForumComment(id);
   }
 }

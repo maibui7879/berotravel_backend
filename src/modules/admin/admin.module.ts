@@ -8,15 +8,29 @@ import { Booking } from '../bookings/entities/booking.entity';
 import { Auth } from '../auth/entities/auth.entity';
 import { User } from '../users/entities/user.entity';
 import { MerchantRequest } from '../users/entities/merchant-request.entity';
+import { Place } from '../places/entities/place.entity';
+import { ForumPost, ForumComment } from '../forum/entities/forum.entity';
+import { ForumReport } from '../forum/entities/forum-report.entity';
 
 import { NotificationsModule } from '../notification/notification.module';
 import { PlacesModule } from '../places/places.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Payment, Payout, Booking, Auth, User, MerchantRequest]),
+    TypeOrmModule.forFeature([
+      Payment, 
+      Payout, 
+      Booking, 
+      Auth, 
+      User, 
+      MerchantRequest, 
+      Place, 
+      ForumPost, 
+      ForumComment, 
+      ForumReport
+    ]),
     NotificationsModule,
-    PlacesModule, // Import PlacesModule to get PlacesService with all its dependencies resolved
+    PlacesModule, 
   ],
   controllers: [AdminController],
   providers: [AdminDashboardService],
