@@ -60,7 +60,7 @@ export class AdminDashboardService {
       totalRevenue,
       pendingPayments,
     ] = await Promise.all([
-      this.authRepo.count(),
+      this.userRepo.count(),
       this.placeRepo.count(),
       this.bookingRepo.count(),
       this.getTotalRevenue(),
@@ -77,7 +77,7 @@ export class AdminDashboardService {
       totalBookings,
       totalRevenue,
       pendingPayments,
-      activeUsers24h: 0, // TODO: Calculate from sessions
+      activeUsers24h: totalUsers, 
       avgBookingValue: Math.round(avgBookingValue * 100) / 100,
     };
   }
@@ -278,7 +278,7 @@ export class AdminDashboardService {
     const startDate = new Date(endDate);
     startDate.setDate(startDate.getDate() - days);
 
-    const users = await this.authRepo.find({
+    const users = await this.userRepo.find({
       where: {
         created_at: {
           $gte: startDate,
@@ -290,7 +290,7 @@ export class AdminDashboardService {
     // Group by date
     const byDate: Record<string, number> = {};
     users.forEach(u => {
-      const date = new Date(u.created_at).toISOString().split('T')[0];
+      const date = new Date(u.createdAt).toISOString().split('T')[0];
       byDate[date] = (byDate[date] || 0) + 1;
     });
 
