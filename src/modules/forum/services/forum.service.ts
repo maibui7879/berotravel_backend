@@ -40,6 +40,20 @@ export class ForumService {
   /**
    * Tìm hoặc tạo mới Tag, trả về mảng IDs
    */
+
+  async getAllTags() {
+    // Trả về tất cả các tag, sắp xếp theo số lần sử dụng nhiều nhất
+    return await this.tagRepo.find({
+      order: { use_count: -1 } as any
+    });
+  }
+
+  async getTagById(id: string) {
+    const tag = await this.tagRepo.findOne({ where: { _id: new ObjectId(id) } });
+    if (!tag) throw new NotFoundException('Tag không tồn tại');
+    return tag;
+  }
+
   private async syncTags(tagNames: string[]): Promise<string[]> {
     const tagIds: string[] = [];
 

@@ -16,6 +16,20 @@ import { Role } from '../../common/constants';
 export class ForumController {
   constructor(private readonly forumService: ForumService) {}
 
+  @Get('tags')
+  @Public()
+  @ApiOperation({ summary: 'Lấy danh sách tất cả các hashtag' })
+  getAllTags() {
+    return this.forumService.getAllTags();
+  }
+
+  @Get('tags/:id')
+  @Public()
+  @ApiOperation({ summary: 'Lấy chi tiết 1 hashtag theo ID' })
+  getTagById(@Param('id') id: string) {
+    return this.forumService.getTagById(id);
+  }
+  
   @Post('posts')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo bài viết mới' })
