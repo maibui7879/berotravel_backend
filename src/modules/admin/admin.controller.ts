@@ -31,7 +31,7 @@ export class AdminController {
    * GET /admin/dashboard/overview
    * Get dashboard overview statistics
    */
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({
     summary: 'Get dashboard overview',
     description: 'Get key statistics for admin dashboard',
@@ -45,7 +45,7 @@ export class AdminController {
    * GET /admin/revenue/stats
    * Get revenue statistics
    */
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Get revenue statistics',
     description: 'Get revenue stats for a date range',
@@ -65,7 +65,7 @@ export class AdminController {
    * GET /admin/revenue/daily-trend
    * Get daily revenue trend
    */
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({
     summary: 'Get revenue trend',
     description: 'Get daily revenue trend for specified days',
@@ -79,7 +79,7 @@ export class AdminController {
    * GET /admin/merchants/top
    * Get top merchants by revenue
    */
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({
     summary: 'Get top merchants',
     description: 'Get top merchants by revenue',
@@ -93,7 +93,7 @@ export class AdminController {
    * GET /admin/bookings/stats
    * Get booking statistics
    */
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({
     summary: 'Get booking statistics',
     description: 'Get booking stats for a date range',
@@ -113,7 +113,7 @@ export class AdminController {
    * GET /admin/users/growth
    * Get user growth trend
    */
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({
     summary: 'Get user growth trend',
     description: 'Get daily user signup trend',
@@ -127,7 +127,7 @@ export class AdminController {
    * GET /admin/payouts/stats
    * Get payout statistics
    */
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({
     summary: 'Get payout statistics',
     description: 'Get payout stats for a date range',
@@ -235,28 +235,28 @@ export class AdminController {
   }
 
   @Get('users')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Lấy danh sách tất cả Users' })
   getAllUsers(@Query('page') page: string = '1', @Query('limit') limit: string = '10') {
     return this.dashboardService.getAllUsers(+page, +limit);
   }
 
   @Get('users/:id')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Xem chi tiết 1 User' })
   getUserById(@Param('id') id: string) {
     return this.dashboardService.getUserById(id);
   }
 
   @Patch('users/:id')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Cập nhật thông tin User (Tùy ý)' })
   updateUser(@Param('id') id: string, @Body() data: any) {
     return this.dashboardService.updateUser(id, data);
   }
 
   @Delete('users/:id')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Xóa User khỏi hệ thống' })
   deleteUser(@Param('id') id: string) {
     return this.dashboardService.deleteUser(id);
@@ -265,28 +265,28 @@ export class AdminController {
   // ================= ADMIN: CRUD PLACES =================
 
   @Get('places')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Lấy danh sách tất cả Places' })
   getAllPlaces(@Query('page') page: string = '1', @Query('limit') limit: string = '10') {
     return this.dashboardService.getAllPlaces(+page, +limit);
   }
 
   @Get('places/:id')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Xem chi tiết 1 Place' })
   getPlaceById(@Param('id') id: string) {
     return this.dashboardService.getPlaceById(id);
   }
 
   @Patch('places/:id')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Cập nhật thông tin Place (Tùy ý/Không cần xác thực Owner)' })
   updatePlace(@Param('id') id: string, @Body() data: any) {
     return this.dashboardService.updatePlace(id, data);
   }
 
   @Delete('places/:id')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Xóa Place khỏi hệ thống' })
   deletePlace(@Param('id') id: string) {
     return this.dashboardService.deletePlace(id);
@@ -295,14 +295,14 @@ export class AdminController {
   // ================= ADMIN: FORUM & REPORTS =================
 
   @Get('forum/reports')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Xem danh sách báo cáo vi phạm diễn đàn' })
   getForumReports(@Query('page') page: string = '1', @Query('limit') limit: string = '10') {
     return this.dashboardService.getForumReports(+page, +limit);
   }
 
   @Patch('forum/reports/:id/resolve')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Xử lý báo cáo vi phạm (Xóa bài hoặc Bỏ qua)' })
   @ApiBody({ schema: { properties: { action: { type: 'string', enum: ['DELETE_POST', 'DISMISS'] } } } })
   resolveForumReport(
@@ -313,7 +313,7 @@ export class AdminController {
   }
 
   @Delete('forum/comments/:id')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN, )
   @ApiOperation({ summary: 'ADMIN: Xóa trực tiếp một bình luận vi phạm' })
   deleteForumComment(@Param('id') id: string) {
     return this.dashboardService.deleteForumComment(id);
