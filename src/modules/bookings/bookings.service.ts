@@ -184,7 +184,15 @@ export class BookingsService {
 
   // ================= QUẢN LÝ KHO & ĐƠN HÀNG =================
 
-  async createUnit(dto: any) {
+  async createUnit(dto: any, user: any) {
+    // KỊCH BẢN: Admin được qua, Merchant phải là chủ của place_id này
+    if (user.role !== Role.ADMIN) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(dto.place_id) } });
+      if (!place) throw new NotFoundException('Địa điểm không tồn tại');
+      if (place.ownerId !== user.sub) {
+        throw new ForbiddenException('Bạn không phải là chủ sở hữu của địa điểm này');
+      }
+    }
     return await this.unitRepo.save(this.unitRepo.create(dto));
   }
 
@@ -192,11 +200,17 @@ export class BookingsService {
     return await this.unitRepo.find({ where: { place_id: placeId } });
   }
 
-  async updateUnit(id: string, dto: any, user: any) {
+async updateUnit(id: string, dto: any, user: any) {
     const unit = await this.unitRepo.findOne({ where: { _id: new ObjectId(id) } });
     if (!unit) throw new NotFoundException('Unit không tồn tại');
-    const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(unit.place_id) } });
-    if (user.role !== Role.ADMIN && place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền');
+    
+    // CHECK QUYỀN
+    if (user.role !== Role.ADMIN) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(unit.place_id) } });
+      if (!place || place.ownerId !== user.sub) {
+        throw new ForbiddenException('Bạn không phải là chủ sở hữu, không có quyền sửa Unit này');
+      }
+    }
     
     await this.unitRepo.update(new ObjectId(id), dto);
     return this.unitRepo.findOne({ where: { _id: new ObjectId(id) } });
@@ -205,15 +219,33 @@ export class BookingsService {
   async deleteUnit(id: string, user: any) {
     const unit = await this.unitRepo.findOne({ where: { _id: new ObjectId(id) } });
     if (!unit) throw new NotFoundException('Unit không tồn tại');
-    const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(unit.place_id) } });
-    if (user.role !== Role.ADMIN && place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền');
+    
+    // CHECK QUYỀN
+    if (user.role !== Role.ADMIN) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(unit.place_id) } });
+      if (!place || place.ownerId !== user.sub) {
+        throw new ForbiddenException('Bạn không phải là chủ sở hữu, không có quyền xóa Unit này');
+      }
+    }
 
     await this.unitRepo.delete(new ObjectId(id));
     return { success: true };
   }
 
-  async updatePriceOverride(dto: any, user: any) {
+async updatePriceOverride(dto: any, user: any) {
     const { unit_id, date, price_override, time_slot } = dto;
+    
+    const unit = await this.unitRepo.findOne({ where: { _id: new ObjectId(unit_id) } });
+    if (!unit) throw new NotFoundException('Loại phòng/bàn không tồn tại');
+
+    // CHECK QUYỀN
+    if (user.role !== Role.ADMIN) {
+      const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(unit.place_id) } });
+      if (!place || place.ownerId !== user.sub) {
+        throw new ForbiddenException('Bạn không phải là chủ sở hữu, không có quyền thay đổi giá');
+      }
+    }
+
     const targetDate = new Date(new Date(date).setHours(0, 0, 0, 0));
     await this.availRepo.updateOne(
       { unit_id, date: targetDate, time_slot: time_slot || null },
@@ -241,18 +273,22 @@ export class BookingsService {
     await this.bookingRepo.save(booking);
   }
 
-  async cancel(id: string, user: any) {
+async cancel(id: string, user: any) {
     const booking = await this.bookingRepo.findOne({ where: { _id: new ObjectId(id) } });
     if (!booking) throw new NotFoundException('Đơn không tồn tại');
     if (user.role !== Role.ADMIN && booking.user_id !== user.sub) throw new ForbiddenException('Không có quyền');
-    if (booking.status === 'CANCELLED') return { success: true }; // Tránh trừ/hủy 2 lần
+    if (booking.status === 'CANCELLED') return { success: true }; 
+
+    // [THÊM MỚI]: Chặn các trạng thái không được phép hủy
+    if (booking.status === 'COMPLETED' || booking.status === 'CONFIRMED') {
+      throw new BadRequestException(`Không thể hủy đơn đã thanh toán hoặc hoàn thành`);
+    }
 
     await this.bookingRepo.update(new ObjectId(id), { status: 'CANCELLED' });
     
-    // TÍNH TOÁN LẠI DANH SÁCH NGÀY ĐỂ HOÀN TRẢ
+    // ... logic tính ngày hoàn trả giữ nguyên ...
     const startDate = new Date(booking.check_in);
     const datesToRefund: Date[] = [];
-
     if ((booking.booking_type === 'ROOM' || booking.booking_type === 'HOUSE') && booking.check_out) {
       const endDate = new Date(booking.check_out);
       const tempDate = new Date(startDate);
@@ -264,7 +300,6 @@ export class BookingsService {
       datesToRefund.push(startDate);
     }
 
-    // HOÀN TRẢ ATOMIC CHO TẤT CẢ CÁC NGÀY ĐÃ ĐẶT
     await Promise.all(
       datesToRefund.map(date => 
         this.availRepo.updateOne(
@@ -278,21 +313,17 @@ export class BookingsService {
   }
   
   // LƯU Ý KHI GỌI: Cần truyền thêm unitId từ service hành trình qua
-async releaseBookingSlot(placeId: string, dateStr: string, quantity: number = 1) {
-    if (!placeId || !dateStr) return; // Bảo vệ hàm
+async releaseBookingSlot(unitId: string, dateStr: string, quantity: number = 1) {
+    // Sửa placeId thành unitId.
+    if (!unitId || !dateStr) return; 
 
-    // 1. Tìm Inventory Unit của Place
-    const units = await this.unitRepo.find({ where: { place_id: placeId } });
-    if (!units || units.length === 0) return; 
-
-    // Vì JourneyStop không lưu unit_id cụ thể, tạm thời thao tác trên Unit đầu tiên giống logic cũ của bạn
-    const unit = units[0];
+    const unit = await this.unitRepo.findOne({ where: { _id: new ObjectId(unitId) } });
+    if (!unit) return;
 
     const targetDate = new Date(new Date(dateStr).setHours(0,0,0,0));
 
-    // DÙNG ATOMIC $INC ĐỂ TRÁNH RACE CONDITION
     await this.availRepo.findOneAndUpdate(
-      { unit_id: unit._id.toString(), date: targetDate },
+      { unit_id: unitId.toString(), date: targetDate },
       { 
         $inc: { 
           available_count: quantity, 
@@ -301,23 +332,16 @@ async releaseBookingSlot(placeId: string, dateStr: string, quantity: number = 1)
       }
     );
   }
-
   // ==========================================
   // INVENTORY MANAGEMENT (MERCHANT)
   // ==========================================
 
-  async updateInventoryQuantity(
-    unitId: string,
-    quantity: number,
-    dateFrom: string,
-    dateTo?: string,
-    reason: string = 'MANUAL_UPDATE',
-    user?: any
+async updateInventoryQuantity(
+    unitId: string, quantity: number, dateFrom: string, dateTo?: string, reason: string = 'MANUAL_UPDATE', user?: any
   ) {
     const unit = await this.unitRepo.findOne({ where: { _id: new ObjectId(unitId) } });
     if (!unit) throw new NotFoundException('Loại phòng/bàn không tồn tại');
 
-    // Kiểm quyền
     if (user && user.role !== Role.ADMIN) {
       const place = await this.placeRepo.findOne({ where: { _id: new ObjectId(unit.place_id) } });
       if (place?.ownerId !== user.sub) throw new ForbiddenException('Không có quyền quản lý kho này');
@@ -325,36 +349,40 @@ async releaseBookingSlot(placeId: string, dateStr: string, quantity: number = 1)
 
     const startDate = new Date(new Date(dateFrom).setHours(0, 0, 0, 0));
     const endDate = dateTo ? new Date(new Date(dateTo).setHours(0, 0, 0, 0)) : startDate;
-
     const datesToUpdate: Date[] = [];
     const tempDate = new Date(startDate);
     while (tempDate <= endDate) {
       datesToUpdate.push(new Date(tempDate));
       tempDate.setDate(tempDate.getDate() + 1);
     }
-
     const transactions: InventoryTransaction[] = [];
 
-    // FIX: Sử dụng UpdateOne với Upsert để chống Race Condition
     for (const date of datesToUpdate) {
+      // [THÊM MỚI]: Lấy trạng thái kho TRƯỚC khi cập nhật
+      const avail = await this.availRepo.findOne({ where: { unit_id: unitId, date: date } });
+      const quantityBefore = avail ? avail.available_count : unit.total_inventory;
+      const quantityAfter = quantityBefore + quantity;
+
       await this.availRepo.updateOne(
         { unit_id: unitId, date: date },
         { 
           $inc: { available_count: quantity },
           $setOnInsert: {
              booked_count: 0,
-             // Lượng tồn kho mới khi tạo bản ghi = tổng có sẵn + số lượng điều chỉnh (giảm thì thành trừ)
              available_count: unit.total_inventory + quantity 
           }
         },
         { upsert: true }
       );
 
+      // [SỬA]: Thêm quantity_before và quantity_after vào Log
       const transaction = this.transactionRepo.create({
         place_id: unit.place_id,
         unit_id: unitId,
         transaction_type: quantity > 0 ? TransactionType.RESTOCK : TransactionType.ADJUSTMENT,
         quantity_changed: quantity,
+        quantity_before: quantityBefore, 
+        quantity_after: quantityAfter,   
         date_from: date,
         date_to: date,
         merchant_id: user?.sub,
@@ -364,12 +392,7 @@ async releaseBookingSlot(placeId: string, dateStr: string, quantity: number = 1)
     }
 
     await this.transactionRepo.insertMany(transactions);
-
-    return {
-      success: true,
-      message: `Cập nhật ${datesToUpdate.length} ngày thành công`,
-      transactions: transactions.length,
-    };
+    return { success: true, message: `Cập nhật ${datesToUpdate.length} ngày thành công`, transactions: transactions.length };
   }
 
   async getInventoryTransactions(placeId: string, unitId?: string, user?: any) {

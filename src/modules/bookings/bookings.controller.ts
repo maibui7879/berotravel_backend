@@ -35,14 +35,15 @@ export class BookingsController {
 
   // --- QUẢN LÝ KHO (MERCHANT) ---
 
-  @Post('units')
+@Post('units')
   @Roles(Role.ADMIN, Role.MERCHANT)
   @UseGuards(RolesGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo loại phòng/bàn (Merchant)' })
   @ApiResponse({ status: 201, type: InventoryUnit })
-  createUnit(@Body() dto: CreateInventoryUnitDto) {
-    return this.bookingsService.createUnit(dto);
+  // [SỬA]: Thêm @GetCurrentUser() user: any
+  createUnit(@Body() dto: CreateInventoryUnitDto, @GetCurrentUser() user: any) {
+    return this.bookingsService.createUnit(dto, user);
   }
 
   @Public()
