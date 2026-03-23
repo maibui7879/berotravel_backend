@@ -1,4 +1,4 @@
-// src/modules/forum/forum.service.ts
+// src/modules/forum/services/forum.service.ts
 
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -24,7 +24,6 @@ export class ForumService {
     @InjectRepository(Journey) private readonly journeyRepo: MongoRepository<Journey>,
     private readonly notificationsService: NotificationsService,
     private readonly userProfileService: UserProfileService,
-    
   ) {}
 
   private extractHashtags(title: string, content: string): string[] {
@@ -38,14 +37,30 @@ export class ForumService {
   }
 
   /**
-   * Tìm hoặc tạo mới Tag, trả về mảng IDs
+   * Lấy danh sách Tag có phân trang và tùy chọn thịnh hành (trending)
    */
+  async getAllTags(page: number = 1, limit: number = 10, trending: boolean = false) {
+    const skip = (page - 1) * limit;
+    const sortOrder: any = trending ? { use_count: -1 } : { created_at: -1 };
 
-  async getAllTags() {
-    // Trả về tất cả các tag, sắp xếp theo số lần sử dụng nhiều nhất
-    return await this.tagRepo.find({
-      order: { use_count: -1 } as any
-    });
+    const [data, total] = await Promise.all([
+      this.tagRepo.find({
+        order: sortOrder,
+        skip,
+        take: limit,
+      }),
+      this.tagRepo.count(),
+    ]);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        last_page: Math.ceil(total / limit),
+      },
+    };
   }
 
   async getTagById(id: string) {
@@ -81,7 +96,7 @@ export class ForumService {
       ...dto,
       author_id: userId,
       tag_ids: autoTagIds,
-      status: dto.status || PostStatus.PUBLISHED, // Ép giá trị mặc định nếu dto không có
+      status: dto.status || PostStatus.PUBLISHED,
       is_pinned: dto.is_pinned || false,
       liked_by: [],
       stats: { likes: 0, views: 0, comments: 0 }
@@ -92,11 +107,9 @@ export class ForumService {
     return savedPost;
   }
 
-async findAll(filter: PostSearchFilterDto) {
-
+  async findAll(filter: PostSearchFilterDto) {
     const { search, category, place_id, author_id, tag, sortBy, page = 1, limit = 10 } = filter;
-
-    const query: any = { status: PostStatus.PUBLISHED  };
+    const query: any = { status: PostStatus.PUBLISHED };
 
     if (search) {
       query.$or = [
@@ -109,15 +122,13 @@ async findAll(filter: PostSearchFilterDto) {
     if (author_id) query.author_id = author_id;
     if (place_id) query.place_ids = { $in: [place_id] };
     
-    // Logic mới: Tìm kiếm bằng tên/từ khóa tag
     if (tag) {
       const matchedTags = await this.tagRepo.find({
         where: { name: { $regex: tag, $options: 'i' } as any }
       });
 
       if (matchedTags.length > 0) {
-        const matchedTagIds = matchedTags.map(t => t._id.toString());
-        query.tag_ids = { $in: matchedTagIds };
+        query.tag_ids = { $in: matchedTags.map(t => t._id.toString()) };
       } else {
         query.tag_ids = { $in: [] }; 
       }
@@ -132,55 +143,46 @@ async findAll(filter: PostSearchFilterDto) {
       case PostSortBy.TRENDING:
         sortOrder = { ...sortOrder, 'stats.comments': -1, 'stats.views': -1 };
         break;
-      case PostSortBy.LATEST:
       default:
         sortOrder = { ...sortOrder, created_at: -1 };
         break;
     }
 
-    // Use aggregation pipeline with $lookup to fetch author data
     const pipeline: any[] = [
       { $match: query },
       {
         $addFields: {
-          author_id_obj: { $toObjectId: '$author_id' }
+          author_id_obj: { $toObjectId: '$author_id' },
+          tag_ids_obj: { $map: { input: { $ifNull: ['$tag_ids', []] }, as: 'id', in: { $toObjectId: '$$id' } } },
+          place_ids_obj: { $map: { input: { $ifNull: ['$place_ids', []] }, as: 'id', in: { $toObjectId: '$$id' } } },
+          journey_id_obj: { 
+            $cond: [
+              { $and: [{ $gt: ['$journey_id', null] }, { $ne: ['$journey_id', ''] }] },
+              { $toObjectId: '$journey_id' },
+              null
+            ]
+          }
         }
       },
-      {
-        $lookup: {
-          from: 'users', // Fixed collection name
-          localField: 'author_id_obj',
-          foreignField: '_id',
-          as: 'authorDetails'
-        }
-      },
-      {
-        $unwind: {
-          path: '$authorDetails',
-          preserveNullAndEmptyArrays: true
-        }
-      },
+      { $lookup: { from: 'users', localField: 'author_id_obj', foreignField: '_id', as: 'authorData' } },
+      { $lookup: { from: 'forum_tags', localField: 'tag_ids_obj', foreignField: '_id', as: 'tagData' } },
+      { $lookup: { from: 'places', localField: 'place_ids_obj', foreignField: '_id', as: 'placeData' } },
+      { $lookup: { from: 'journeys', localField: 'journey_id_obj', foreignField: '_id', as: 'journeyData' } },
+      { $unwind: { path: '$authorData', preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$journeyData', preserveNullAndEmptyArrays: true } },
       {
         $project: {
-          _id: 1,
-          title: 1,
-          content: 1,
-          images: 1,
-          category: 1,
-          tag_ids: 1,
-          place_ids: 1,
-          journey_id: 1,
-          stats: 1,
-          is_pinned: 1,
-          reports_count: 1,
-          status: 1,
-          created_at: 1,
-          updated_at: 1,
-          author: {
-            id: '$authorDetails._id',
-            fullName: '$authorDetails.fullName',
-            avatar: '$authorDetails.avatar'
-          }
+          _id: 1, title: 1, content: 1, images: 1, category: 1, stats: 1, is_pinned: 1, reports_count: 1, status: 1, created_at: 1, updated_at: 1, location: 1, find_buddy_details: 1,
+          author: { id: '$authorData._id', fullName: '$authorData.fullName', avatar: '$authorData.avatar' },
+          tags: { $map: { input: '$tagData', as: 't', in: { id: '$$t._id', name: '$$t.name' } } },
+          places: { 
+            $map: { 
+              input: '$placeData', 
+              as: 'p', 
+              in: { id: '$$p._id', name: '$$p.name', image: { $arrayElemAt: [{ $ifNull: ['$$p.images', []] }, 0] } } 
+            } 
+          },
+          journey: { id: '$journeyData._id', name: '$journeyData.name' }
         }
       },
       { $sort: sortOrder },
@@ -188,27 +190,16 @@ async findAll(filter: PostSearchFilterDto) {
       { $limit: limit }
     ];
 
-    // Fetch total count
-    const countPipeline = [
-      { $match: query },
-      { $count: 'total' }
-    ];
-
     const [data, countResult] = await Promise.all([
       this.postRepo.aggregate(pipeline).toArray(),
-      this.postRepo.aggregate(countPipeline).toArray()
+      this.postRepo.aggregate([{ $match: query }, { $count: 'total' }]).toArray()
     ]);
 
     const total = countResult.length > 0 ? countResult[0].total : 0;
 
     return {
       data,
-      meta: {
-        total,
-        page,
-        limit,
-        last_page: Math.ceil(total / limit),
-      }
+      meta: { total, page, limit, last_page: Math.ceil(total / limit) }
     };
   }
 
@@ -219,7 +210,6 @@ async findAll(filter: PostSearchFilterDto) {
     const index = post.liked_by.indexOf(userId);
     if (index === -1) {
       post.liked_by.push(userId);
-      // Gửi thông báo cho tác giả
       if (post.author_id !== userId) {
         this.notificationsService.createAndSend({
           recipient_id: post.author_id,
@@ -242,53 +232,21 @@ async findAll(filter: PostSearchFilterDto) {
     const post = await this.postRepo.findOne({ where: { _id: new ObjectId(postId) } });
     if (!post) throw new NotFoundException('Bài viết không tồn tại');
 
-    const comment = this.commentRepo.create({
-      ...dto,
-      post_id: postId,
-      author_id: userId,
-      liked_by: []
-    });
-    
+    const comment = this.commentRepo.create({ ...dto, post_id: postId, author_id: userId, liked_by: [] });
     const savedComment = await this.commentRepo.save(comment);
 
     post.stats.comments += 1;
     await this.postRepo.save(post);
 
-    // Fetch comment with author info using aggregation
     const commentWithAuthor = await this.commentRepo.aggregate([
       { $match: { _id: new ObjectId(savedComment._id.toString()) } },
-      {
-        $addFields: {
-          author_id_obj: { $toObjectId: '$author_id' }
-        }
-      },
-      {
-        $lookup: {
-          from: 'users', // Fixed collection name
-          localField: 'author_id_obj',
-          foreignField: '_id',
-          as: 'authorDetails'
-        }
-      },
-      {
-        $unwind: {
-          path: '$authorDetails',
-          preserveNullAndEmptyArrays: true
-        }
-      },
+      { $addFields: { author_id_obj: { $toObjectId: '$author_id' } } },
+      { $lookup: { from: 'users', localField: 'author_id_obj', foreignField: '_id', as: 'authorData' } },
+      { $unwind: { path: '$authorData', preserveNullAndEmptyArrays: true } },
       {
         $project: {
-          _id: 1,
-          post_id: 1,
-          content: 1,
-          parent_id: 1,
-          liked_by: 1,
-          created_at: 1,
-          author: {
-            id: '$authorDetails._id',
-            fullName: '$authorDetails.fullName',
-            avatar: '$authorDetails.avatar'
-          }
+          _id: 1, post_id: 1, content: 1, parent_id: 1, liked_by: 1, created_at: 1,
+          author: { id: '$authorData._id', fullName: '$authorData.fullName', avatar: '$authorData.avatar' }
         }
       }
     ]).toArray();
@@ -298,7 +256,7 @@ async findAll(filter: PostSearchFilterDto) {
 
   async remove(postId: string, userId: string, isAdmin: boolean) {
     const post = await this.postRepo.findOne({ where: { _id: new ObjectId(postId) } });
-    if (!post) throw new NotFoundException();
+    if (!post) throw new NotFoundException('Bài viết không tồn tại');
     
     if (post.author_id !== userId && !isAdmin) {
       throw new ForbiddenException('Bạn không có quyền xóa bài này');
@@ -308,66 +266,49 @@ async findAll(filter: PostSearchFilterDto) {
   }
 
   /**
-   * Lấy chi tiết bài viết kèm theo thông tin tóm tắt hành trình (nếu có) và các bình luận
+   * Lấy chi tiết bài viết kèm theo thông tin tóm tắt hành trình và các bình luận
    */
   async getPostDetail(postId: string, userId?: string) {
-    // Fetch post with author info using aggregation
-    const postData = await this.postRepo.aggregate([
+    const pipeline: any[] = [
       { $match: { _id: new ObjectId(postId) } },
       {
         $addFields: {
-          author_id_obj: { $toObjectId: '$author_id' }
-        }
-      },
-      {
-        $lookup: {
-          from: 'users', // Fixed collection name
-          localField: 'author_id_obj',
-          foreignField: '_id',
-          as: 'authorDetails'
-        }
-      },
-      {
-        $unwind: {
-          path: '$authorDetails',
-          preserveNullAndEmptyArrays: true
-        }
-      },
-      {
-        $project: {
-          _id: 1,
-          title: 1,
-          content: 1,
-          images: 1,
-          category: 1,
-          tag_ids: 1,
-          place_ids: 1,
-          journey_id: 1,
-          stats: 1,
-          status: 1,
-          is_pinned: 1,
-          reports_count: 1,
-          created_at: 1,
-          updated_at: 1,
-          author: {
-            id: '$authorDetails._id',
-            fullName: '$authorDetails.fullName',
-            avatar: '$authorDetails.avatar'
+          author_id_obj: { $toObjectId: '$author_id' },
+          tag_ids_obj: { $map: { input: { $ifNull: ['$tag_ids', []] }, as: 'id', in: { $toObjectId: '$$id' } } },
+          place_ids_obj: { $map: { input: { $ifNull: ['$place_ids', []] }, as: 'id', in: { $toObjectId: '$$id' } } },
+          journey_id_obj: { 
+            $cond: [
+              { $and: [{ $gt: ['$journey_id', null] }, { $ne: ['$journey_id', ''] }] },
+              { $toObjectId: '$journey_id' },
+              null
+            ]
           }
         }
+      },
+      { $lookup: { from: 'users', localField: 'author_id_obj', foreignField: '_id', as: 'authorData' } },
+      { $lookup: { from: 'forum_tags', localField: 'tag_ids_obj', foreignField: '_id', as: 'tagData' } },
+      { $lookup: { from: 'places', localField: 'place_ids_obj', foreignField: '_id', as: 'placeData' } },
+      { $lookup: { from: 'journeys', localField: 'journey_id_obj', foreignField: '_id', as: 'journeyData' } },
+      { $unwind: { path: '$authorData', preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$journeyData', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 1, title: 1, content: 1, images: 1, category: 1, stats: 1, status: 1, is_pinned: 1, reports_count: 1, created_at: 1, updated_at: 1, location: 1, find_buddy_details: 1, journey_id: 1,
+          author: { id: '$authorData._id', fullName: '$authorData.fullName', avatar: '$authorData.avatar' },
+          tags: { $map: { input: '$tagData', as: 't', in: { id: '$$t._id', name: '$$t.name' } } },
+          places: { $map: { input: '$placeData', as: 'p', in: { id: '$$p._id', name: '$$p.name', image: { $arrayElemAt: [{ $ifNull: ['$$p.images', []] }, 0] } } } },
+          journey: { id: '$journeyData._id', name: '$journeyData.name' }
+        }
       }
-    ]).toArray();
+    ];
 
-    if (postData.length === 0) {
-      throw new NotFoundException('Bài viết không tồn tại');
-    }
+    const postData = await this.postRepo.aggregate(pipeline).toArray();
+    if (postData.length === 0) throw new NotFoundException('Bài viết không tồn tại');
 
     const post = postData[0];
+    await this.postRepo.update(new ObjectId(postId), { stats: { ...post.stats, views: (post.stats?.views || 0) + 1 } } as any);
 
-    // Tăng lượt xem
-    await this.postRepo.update(new ObjectId(postId), { stats: { ...post.stats, views: post.stats.views + 1 } } as any);
-
-    // Lấy thông tin tóm tắt hành trình nếu có journey_id
+    // Giữ nguyên logic journey_summary từ code cũ
     let journey_summary: any = null;
     if (post.journey_id) {
       try {
@@ -379,79 +320,37 @@ async findAll(filter: PostSearchFilterDto) {
             total_days: journey.days?.length || 0,
             start_date: journey.start_date,
             end_date: journey.end_date,
-            main_destinations: journey.days
-              ?.flatMap(d => d.stops || [])
-              ?.slice(0, 3)
-              ?.map(s => ({ place_id: s.place_id })) || [],
+            main_destinations: journey.days?.flatMap(d => d.stops || [])?.slice(0, 3)?.map(s => ({ place_id: s.place_id })) || [],
             total_budget: journey.total_budget,
             members_count: journey.members?.length || 0
           };
         }
-      } catch (e) {
-        // Ignore if journey not found
-      }
+      } catch (e) {}
     }
 
-    // Fetch comments with author info
     const comments = await this.commentRepo.aggregate([
       { $match: { post_id: postId } },
-      {
-        $addFields: {
-          author_id_obj: { $toObjectId: '$author_id' }
-        }
-      },
-      {
-        $lookup: {
-          from: 'users', // Fixed collection name
-          localField: 'author_id_obj',
-          foreignField: '_id',
-          as: 'authorDetails'
-        }
-      },
-      {
-        $unwind: {
-          path: '$authorDetails',
-          preserveNullAndEmptyArrays: true
-        }
-      },
+      { $addFields: { author_id_obj: { $toObjectId: '$author_id' } } },
+      { $lookup: { from: 'users', localField: 'author_id_obj', foreignField: '_id', as: 'authorData' } },
+      { $unwind: { path: '$authorData', preserveNullAndEmptyArrays: true } },
       {
         $project: {
-          _id: 1,
-          post_id: 1,
-          content: 1,
-          parent_id: 1,
-          liked_by: 1,
-          created_at: 1,
-          author: {
-            id: '$authorDetails._id',
-            fullName: '$authorDetails.fullName',
-            avatar: '$authorDetails.avatar'
-          }
+          _id: 1, post_id: 1, content: 1, parent_id: 1, liked_by: 1, created_at: 1,
+          author: { id: '$authorData._id', fullName: '$authorData.fullName', avatar: '$authorData.avatar' }
         }
       },
       { $sort: { created_at: -1 } }
     ]).toArray();
 
-    return {
-      ...post,
-      comments,
-      journey_summary
-    };
+    return { ...post, comments, journey_summary };
   }
 
-  /**
-   * Báo cáo bài viết vi phạm
-   */
   async reportPost(postId: string, reporterId: string, dto: ReportPostDto) {
     const post = await this.postRepo.findOne({ where: { _id: new ObjectId(postId) } });
     if (!post) throw new NotFoundException('Bài viết không tồn tại');
 
-    // Kiểm tra xem người này đã báo cáo bài này trước đó chưa
     const existingReport = await this.reportRepo.findOne({
-      where: {
-        post_id: postId,
-        reporter_id: reporterId
-      }
+      where: { post_id: postId, reporter_id: reporterId }
     });
 
     if (existingReport && existingReport.status === ReportStatus.PENDING) {
@@ -459,23 +358,16 @@ async findAll(filter: PostSearchFilterDto) {
     }
 
     const report = this.reportRepo.create({
-      post_id: postId,
-      reporter_id: reporterId,
-      author_id: post.author_id,
-      reason: dto.reason,
-      description: dto.description,
-      status: ReportStatus.PENDING
+      post_id: postId, reporter_id: reporterId, author_id: post.author_id,
+      reason: dto.reason, description: dto.description, status: ReportStatus.PENDING
     });
 
     const savedReport = await this.reportRepo.save(report);
-
-    // Tăng số báo cáo
     post.reports_count = (post.reports_count || 0) + 1;
     await this.postRepo.save(post);
 
-    // Gửi thông báo cho Admin
     await this.notificationsService.createAndSend({
-      recipient_id: 'admin', // Hoặc gửi cho tất cả admins
+      recipient_id: 'admin',
       sender_id: reporterId,
       type: NotificationType.SYSTEM,
       title: 'Báo cáo bài viết',
@@ -483,10 +375,6 @@ async findAll(filter: PostSearchFilterDto) {
       metadata: { post_id: postId, report_id: savedReport._id.toString() }
     });
 
-    return {
-      success: true,
-      message: 'Báo cáo đã được gửi. Cảm ơn bạn đã giúp chúng tôi xây dựng cộng đồng lành mạnh!',
-      report_id: savedReport._id.toString()
-    };
+    return { success: true, message: 'Báo cáo đã được gửi. Cảm ơn bạn!', report_id: savedReport._id.toString() };
   }
 }
