@@ -20,6 +20,7 @@ import { JoinJourneyDto, ManageMemberDto } from './dto/member-management.dto';
 import { MoveStopDto } from './dto/move-stop.dto';
 import { UpdateStopDto } from './dto/update-stop.dto';
 import { TransferHostDto, ChangeMemberRoleDto } from './dto/permission-management.dto';
+import { AddExtraExpenseDto } from './dto/tracking.dto';
 
 interface CurrentUser {
   sub: string;
@@ -168,6 +169,17 @@ getPublicFeed(
     return this.costEstimationService.estimateJourneyBudget(journeyId, withAccommodation, members);
   }
 
+  @Post(':id/expenses')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Ghi nhận chi tiêu ngoài lịch trình (Quỹ nhóm)' })
+  addExtraExpense(
+    @Param('id') id: string, 
+    @Body() dto: AddExtraExpenseDto, 
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.addExtraExpense(id, dto, userId);
+  }
+  
   @Patch(':id/start')
   @ApiBearerAuth()
   @ApiOperation({ summary: '8. [TRACKING] Bắt đầu chuyến đi' })

@@ -119,10 +119,43 @@ export class UsersService {
     };
   }
   
+  async searchUsers(keyword: string, currentUserId: string) {
+    if (!keyword || keyword.trim() === '') {
+      return []; // Trả về mảng rỗng nếu không có từ khóa
+    }
+
+    const regex = new RegExp(keyword.trim(), 'i'); // 'i' để không phân biệt hoa thường
+
+    const users = await this.userRepository.find({
+      where: {
+        $and: [
+          { _id: { $ne: new ObjectId(currentUserId) } }, // Loại trừ chính mình
+          {
+            $or: [
+              { fullName: { $regex: regex } },
+              { email: { $regex: regex } } 
+            ]
+          }
+        ]
+      } as any,
+      take: 20, // Giới hạn 20 kết quả để tối ưu hiệu suất
+    });
+
+    return users.map(user => ({
+      id: user._id.toString(),
+      fullName: user.fullName,
+      avatar: user.avatar,
+      bio: user.bio,
+      travelStyle: user.travelStyle,
+      role: user.role
+    }));
+  }
   // Admin: Xóa người dùng
   async remove(id: string) {
     const result = await this.userRepository.delete(new ObjectId(id));
     if (result.affected === 0) throw new NotFoundException('Không tìm thấy người dùng');
     return { message: 'Xóa thành công' };
   }
+
+  
 }

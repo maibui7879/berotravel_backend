@@ -48,8 +48,20 @@ export class JourneyJoinRequest {
 
 export enum CostType {
   SHARED = 'SHARED',     
-  PER_PERSON = 'PER_PERSON'  
+  PER_PERSON = 'PER_PERSON' ,
+  CUSTOM = 'CUSTOM' 
 }
+
+export interface PayerDetail {
+  user_id: string;
+  amount_paid: number; // Số tiền người này đã bỏ ra
+}
+
+export interface SplitDetail {
+  user_id: string;
+  amount_owed: number; // Số tiền người này phải chịu
+}
+
 
 // [NEW] Enum cho trạng thái Stop (Checklist)
 export enum StopStatus {
@@ -97,6 +109,8 @@ export interface JourneyStop {
   check_in_image?: string | null;
   is_prepaid?: boolean;
   participant_checkins: ParticipantCheckIn[];   
+  payers?: PayerDetail[];    
+  splits?: SplitDetail[];
 }
 
 export interface JourneyDay {
@@ -108,6 +122,9 @@ export interface JourneyDay {
 }
 
 export interface BudgetBreakdown {
+  target_fund: number;           // TỔNG QUỸ NHÓM (= budget_limit * số thành viên)
+  total_fund_spent: number;      // ĐÃ CHI
+  remaining_fund: number;        // Còn lại trong quỹ
   total_shared: number;          // Tổng chi phí chung
   share_per_person: number;      // Tiền chung chia đầu người
   total_personal: number;        // Tổng chi phí riêng
@@ -125,6 +142,14 @@ export enum JourneyStatus {
   PAUSED = 'PAUSED',       // Tạm dừng
   COMPLETED = 'COMPLETED', // Đã xong
   CANCELLED = 'CANCELLED'  // Hủy
+}
+
+export interface ExtraExpense {
+  id: string;
+  title: string;
+  amount: number;
+  paid_by_user_id: string;
+  date: Date;
 }
 
 @Entity('journeys')
@@ -202,6 +227,9 @@ export class Journey {
 
   @Column({ default: 0 })
   favorites_count: number;
+
+  @Column('json', { default: [] })
+  extra_expenses: ExtraExpense[];
   
   @CreateDateColumn() 
   created_at: Date;

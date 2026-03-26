@@ -1,5 +1,5 @@
-import { Controller, Get, Patch, Body, Delete, Param, UseGuards, Post } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiResponse } from '@nestjs/swagger';
+import { Controller, Get, Patch, Body, Delete, Param, UseGuards, Post, Query, } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiResponse, ApiQuery } from '@nestjs/swagger';
 
 import { UsersService } from './services/users.service';
 import { UserProfileService } from './services/user-profile.service'; // [NEW] Import Service thống kê
@@ -157,5 +157,15 @@ export class UsersController {
     @Body() dto: CreateMerchantRequestDto,
   ) {
     return this.usersService.requestMerchantRole(userId, dto);
+  }
+
+  @Get('search')
+  @ApiOperation({ summary: 'Tìm kiếm người dùng khác để kết bạn' })
+  @ApiQuery({ name: 'keyword', required: true, description: 'Tên hoặc email người dùng cần tìm' })
+  searchUsers(
+    @Query('keyword') keyword: string,
+    @GetCurrentUser('sub') currentUserId: string
+  ) {
+    return this.usersService.searchUsers(keyword, currentUserId);
   }
 }

@@ -25,7 +25,7 @@ import { NotificationType } from '../../notification/entities/notification.entit
 import { BookingsService } from '../../bookings/bookings.service';
 import { ChatMessage, MessageType } from 'src/modules/chat/entities/chat-message.entity';
 import { User } from '../../../modules/users/entities/user.entity';
-
+import { AddExtraExpenseDto } from '../dto/tracking.dto';
 export interface AlbumItem {
   source: 'check-in' | 'chat';
   url: string;
@@ -381,59 +381,84 @@ export class JourneysService {
     return journey;
   }
   
-  async updateStop(
-  journeyId: string, 
-  dayId: string, 
-  stopId: string, 
-  dto: UpdateStopDto, 
-  userId: string
-): Promise<Journey> {
-  // Permission check: VIEWER không được phép cập nhật stop
-  await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nhật điểm dừng');
+async updateStop(
+    journeyId: string, 
+    dayId: string, 
+    stopId: string, 
+    dto: UpdateStopDto, 
+    userId: string
+  ): Promise<Journey> {
+    await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nhật điểm dừng');
 
-  const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
-  const day = journey.days.find(d => d.id === dayId);
-  if (!day) throw new NotFoundException('Không tìm thấy ngày này trong lịch trình');
+    const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
+    const day = journey.days.find(d => d.id === dayId);
+    if (!day) throw new NotFoundException('Không tìm thấy ngày này trong lịch trình');
 
-  const stop = day.stops.find(s => s._id === stopId);
-  if (!stop) throw new NotFoundException('Không tìm thấy địa điểm này');
+    const stop = day.stops.find(s => s._id === stopId);
+    if (!stop) throw new NotFoundException('Không tìm thấy địa điểm này');
 
-  if (dto.start_time !== undefined) stop.start_time = dto.start_time;
-  if (dto.end_time !== undefined) stop.end_time = dto.end_time;
-  if (dto.note !== undefined) stop.note = dto.note;
-  if (dto.estimated_cost !== undefined) {
-    if (stop.status === StopStatus.ARRIVED) {
-      throw new BadRequestException('Không thể sửa chi phí dự kiến khi địa điểm đã check-in. Vui lòng cập nhật chi phí thực tế.');
+    if (journey.status === JourneyStatus.COMPLETED) {
+      throw new BadRequestException('Hành trình đã kết thúc, không thể chỉnh sửa chi phí.');
     }
-    stop.estimated_cost = dto.estimated_cost;
-  }
-  if (dto.is_manual_cost !== undefined) stop.is_manual_cost = dto.is_manual_cost;
-  if (dto.cost_type !== undefined) stop.cost_type = dto.cost_type;
+    // Cập nhật thông tin cơ bản
+    if (dto.start_time !== undefined) stop.start_time = dto.start_time;
+    if (dto.end_time !== undefined) stop.end_time = dto.end_time;
+    if (dto.note !== undefined) stop.note = dto.note;
+    if (dto.is_manual_cost !== undefined) stop.is_manual_cost = dto.is_manual_cost;
 
-  const currentMemberIds = journey.members?.map(m => m.user_id) || [];
-
-  if (dto.is_prepaid !== undefined) {
-    stop.is_prepaid = dto.is_prepaid;
-    if (dto.is_prepaid) {
-      stop.participant_ids = []; 
-    } else {
-      stop.participant_ids = dto.participant_ids && dto.participant_ids.length > 0 
-        ? dto.participant_ids 
-        : [...currentMemberIds];
+    // --- LOGIC TÀI CHÍNH ---
+    if (dto.estimated_cost !== undefined) {
+      stop.estimated_cost = dto.estimated_cost;
     }
-  } 
-  else if (dto.participant_ids !== undefined && !stop.is_prepaid) {
-    stop.participant_ids = dto.participant_ids;
+    if (dto.actual_cost !== undefined) {
+      stop.actual_cost = dto.actual_cost;
+    }
+    if (dto.cost_type !== undefined) stop.cost_type = dto.cost_type;
+    if (dto.payers !== undefined) stop.payers = dto.payers;
+    if (dto.splits !== undefined) stop.splits = dto.splits;
+    if (dto.cost_type && dto.cost_type !== CostType.CUSTOM) {
+        dto.splits = []; 
+    }
+
+    const finalActualCost = dto.actual_cost !== undefined ? dto.actual_cost : stop.actual_cost;
+    if (finalActualCost !== undefined) {
+        if (dto.payers && dto.payers.length > 0) {
+            const totalPaid = dto.payers.reduce((sum, p) => sum + p.amount_paid, 0);
+            if (totalPaid !== finalActualCost) {
+                throw new BadRequestException(`Tổng tiền người chi trả (${totalPaid}đ) không khớp với thực tế (${finalActualCost}đ)`);
+            }
+        }
+        if (dto.cost_type === CostType.CUSTOM && dto.splits && dto.splits.length > 0) {
+            const totalOwed = dto.splits.reduce((sum, s) => sum + s.amount_owed, 0);
+            if (totalOwed !== finalActualCost) {
+                throw new BadRequestException(`Tổng tiền chia nợ (${totalOwed}đ) không khớp với thực tế (${finalActualCost}đ)`);
+            }
+        }
+    }
+    // Cập nhật người tham gia & bao phòng
+    const currentMemberIds = journey.members?.map(m => m.user_id) || [];
+    if (dto.is_prepaid !== undefined) {
+      stop.is_prepaid = dto.is_prepaid;
+      if (dto.is_prepaid) {
+        stop.participant_ids = []; 
+      } else {
+        stop.participant_ids = dto.participant_ids && dto.participant_ids.length > 0 
+          ? dto.participant_ids 
+          : [...currentMemberIds];
+      }
+    } 
+    else if (dto.participant_ids !== undefined && !stop.is_prepaid) {
+      stop.participant_ids = dto.participant_ids;
+    }
+
+    await this.schedulerService.recalculateEntireJourney(journey);
+    await this.budgetService.syncSmartBudget(journey);
+    await this.journeyRepo.save(journey);
+
+    this.notifyMembers(journey, userId, 'đã cập nhật thông tin địa điểm', day.day_number);
+
+    return journey;
   }
-
-  await this.schedulerService.recalculateEntireJourney(journey);
-  await this.budgetService.syncSmartBudget(journey);
-  await this.journeyRepo.save(journey);
-
-  this.notifyMembers(journey, userId, 'đã cập nhật thông tin địa điểm', day.day_number);
-
-  return journey;
-}
 
   async moveStop(userId: string, dto: MoveStopDto): Promise<Journey> {
     // Permission check: VIEWER không được phép di chuyển stop
@@ -468,6 +493,10 @@ export class JourneysService {
       const stop = day.stops.find(s => s._id === stopId);
       
       if (stop) {
+        if ((stop.actual_cost && stop.actual_cost > 0) || (stop.payers && stop.payers.length > 0)) {
+               throw new BadRequestException('Không thể xóa địa điểm đã phát sinh chi phí thực tế. Vui lòng đưa chi phí về 0đ trước.');
+           }
+           
            if (stop.status === StopStatus.PENDING) {
                 const dateStr = new Date(day.date).toISOString().split('T')[0];
                 await this.bookingsService.releaseBookingSlot(
@@ -896,5 +925,31 @@ export class JourneysService {
         }),
       ));
     } catch (e) { console.error(e); }
+  }
+
+  async addExtraExpense(journeyId: string, dto: AddExtraExpenseDto, userId: string): Promise<Journey> {
+    const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
+
+    if (!journey.extra_expenses) {
+      journey.extra_expenses = [];
+    }
+
+    // Đẩy khoản chi mới vào mảng
+    journey.extra_expenses.push({
+      id: new ObjectId().toString(),
+      title: dto.title,
+      amount: dto.amount,
+      paid_by_user_id: userId,
+      date: new Date()
+    });
+
+    // Tính lại quỹ và save
+    await this.budgetService.syncSmartBudget(journey);
+    await this.journeyRepo.save(journey);
+
+    // Gửi noti
+    this.notifyMembers(journey, userId, `đã thêm khoản chi "${dto.title}" (${dto.amount.toLocaleString()}đ)`);
+
+    return journey;
   }
 }
