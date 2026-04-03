@@ -4,6 +4,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } f
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ForumService } from './services/forum.service';
 import { CreatePostDto, CreateCommentDto, PostSearchFilterDto } from './dto/forum.dto';
+import { UpdateForumDto } from './dto/update-forum.dto';
 import { ReportPostDto } from './dto/forum-report.dto';
 import { AtGuard } from '../../common/guards/at.guard';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
@@ -36,6 +37,7 @@ export class ForumController {
   create(@Body() dto: CreatePostDto, @GetCurrentUser('sub') userId: string) {
     return this.forumService.create(dto, userId);
   }
+
 
   @Get('posts')
   @Public()

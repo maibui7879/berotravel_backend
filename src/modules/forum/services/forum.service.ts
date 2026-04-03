@@ -7,12 +7,14 @@ import { ObjectId } from 'mongodb';
 import { ForumPost, ForumComment, PostStatus, PostSortBy, ForumTag } from '../entities/forum.entity';
 import { ForumReport, ReportStatus } from '../entities/forum-report.entity';
 import { CreatePostDto, CreateCommentDto, PostSearchFilterDto } from '../dto/forum.dto';
+import { UpdateForumDto } from '../dto/update-forum.dto';
 import { ReportPostDto } from '../dto/forum-report.dto';
 import { NotificationsService } from '../../notification/notification.service';
 import { NotificationType } from '../../notification/entities/notification.entity';
 import { UserProfileService } from '../../users/services/user-profile.service';
 import { UserActionType } from '../../../common/constants';
-import { Journey } from '../../journey/entities/journey.entity';
+import { Journey, JourneyVisibility } from '../../journey/entities/journey.entity';
+import { Place } from '../../places/entities/place.entity';
 
 @Injectable()
 export class ForumService {
@@ -22,6 +24,7 @@ export class ForumService {
     @InjectRepository(ForumTag) private readonly tagRepo: MongoRepository<ForumTag>,
     @InjectRepository(ForumReport) private readonly reportRepo: MongoRepository<ForumReport>,
     @InjectRepository(Journey) private readonly journeyRepo: MongoRepository<Journey>,
+    @InjectRepository(Place) private readonly placeRepo: MongoRepository<Place>,
     private readonly notificationsService: NotificationsService,
     private readonly userProfileService: UserProfileService,
   ) {}
@@ -88,7 +91,49 @@ export class ForumService {
     return tagIds;
   }
 
+  /**
+   * Hàm helper dùng chung để validate Journey và Places
+   */
+  private async validateJourneyAndPlaces(journeyId?: string, placeIds?: string[]) {
+    // 1. Validate Journey
+    if (journeyId) {
+      if (!ObjectId.isValid(journeyId)) {
+        throw new BadRequestException('ID hành trình không hợp lệ');
+      }
+      const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
+      
+      if (!journey) {
+        throw new NotFoundException('Hành trình không tồn tại');
+      }
+      
+      if (journey.visibility !== JourneyVisibility.PUBLIC) {
+        throw new BadRequestException('Hành trình phải ở trạng thái công khai (PUBLIC) để chia sẻ lên diễn đàn');
+      }
+    }
+
+    // 2. Validate Places
+    if (placeIds && placeIds.length > 0) {
+      const validPlaceIds = placeIds.map(id => {
+        if (!ObjectId.isValid(id)) {
+          throw new BadRequestException(`ID địa điểm không hợp lệ: ${id}`);
+        }
+        return new ObjectId(id);
+      });
+
+      const existingPlacesCount = await this.placeRepo.count({
+        where: { _id: { $in: validPlaceIds } } as any
+      });
+
+      if (existingPlacesCount !== validPlaceIds.length) {
+        throw new BadRequestException('Một hoặc nhiều địa điểm gắn kèm không tồn tại trong hệ thống');
+      }
+    }
+  }
+
   async create(dto: CreatePostDto, userId: string) {
+    // Gọi hàm validate trước khi xử lý logic tạo bài
+    await this.validateJourneyAndPlaces(dto.journey_id, dto.place_ids);
+
     const hashtags = this.extractHashtags(dto.title, dto.content);
 
     const autoTagIds = await this.syncTags(hashtags);
@@ -106,6 +151,10 @@ export class ForumService {
     await this.userProfileService.scoreAction(userId, savedPost._id.toString(), UserActionType.POST_CONTENT);
     return savedPost;
   }
+
+  /**
+   * Cập nhật bài viết với validation cho journey và places
+   */
 
   async findAll(filter: PostSearchFilterDto) {
     const { search, category, place_id, author_id, tag, sortBy, page = 1, limit = 10 } = filter;
