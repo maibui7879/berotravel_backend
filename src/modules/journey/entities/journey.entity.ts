@@ -121,6 +121,20 @@ export interface JourneyDay {
   warnings?: string[];
 }
 
+export enum JourneyMood {
+  RESET_HEALING = 'RESET_HEALING',
+  FOOD_ADVENTURE = 'FOOD_ADVENTURE',
+  NATURE_RELAX = 'NATURE_RELAX',
+  CULTURE_HISTORY = 'CULTURE_HISTORY',
+  FUN_ENTERTAINMENT = 'FUN_ENTERTAINMENT'
+}
+
+export class MoodVote {
+  @ApiProperty() user_id: string;
+  @ApiProperty({ enum: JourneyMood }) mood: JourneyMood;
+  @ApiProperty() voted_at: Date;
+}
+
 export interface BudgetBreakdown {
   target_fund: number;           // TỔNG QUỸ NHÓM (= budget_limit * số thành viên)
   total_fund_spent: number;      // ĐÃ CHI
@@ -231,6 +245,14 @@ export class Journey {
   @Column('json', { default: [] })
   extra_expenses: ExtraExpense[];
   
+  @Column('json', { default: [] })
+  @ApiProperty({ type: [MoodVote] })
+  mood_votes: MoodVote[];
+
+  @Column({ type: 'enum', enum: JourneyMood, nullable: true })
+  @ApiPropertyOptional({ enum: JourneyMood, description: 'Mood chốt cuối cùng hoặc chọn lúc tạo Solo' })
+  primary_mood?: JourneyMood | null;
+
   @CreateDateColumn() 
   created_at: Date;
 

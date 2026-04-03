@@ -48,19 +48,34 @@ export class UpdateStopDto {
   is_prepaid?: boolean;
 
   // --- [MỚI BỔ SUNG] CÁC TRƯỜNG TÀI CHÍNH N-N ---
-  @ApiPropertyOptional({ description: 'Số tiền thực tế của điểm dừng' })
+@ApiPropertyOptional({ 
+    description: 'Số tiền THỰC TẾ của hóa đơn (Chỉ HOST được sửa)',
+    example: 500000 
+  })
   @IsOptional()
   @IsNumber()
   actual_cost?: number;
 
-  @ApiPropertyOptional({ description: 'Danh sách những người góp tiền trả bill' })
+  @ApiPropertyOptional({ 
+    description: 'Danh sách những người móc ví ra trả cho chủ quán (Tổng amount_paid phải bằng actual_cost). Chỉ HOST được sửa.',
+    example: [
+      { user_id: "user_A", amount_paid: 200000 }, 
+      { user_id: "user_B", amount_paid: 300000 }
+    ]
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PayerDetailDto)
   payers?: PayerDetailDto[];
 
-  @ApiPropertyOptional({ description: 'Danh sách chia tiền theo tỷ lệ tùy chỉnh (khi cost_type = CUSTOM)' })
+  @ApiPropertyOptional({ 
+    description: 'Danh sách chia nợ theo từng người (BẮT BUỘC khi cost_type = CUSTOM. Tổng amount_owed phải bằng actual_cost). Chỉ HOST được sửa.',
+    example: [
+      { user_id: "user_A", amount_owed: 100000 }, 
+      { user_id: "user_B", amount_owed: 400000 }
+    ]
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

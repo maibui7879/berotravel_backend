@@ -10,7 +10,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { AtGuard } from '../../common/guards/at.guard';
 import { RolesGuard } from '../../common/guards/role.guard';
-import { JourneyTag, JourneyVisibility } from './entities/journey.entity';
+import { JourneyMood, JourneyTag, JourneyVisibility } from './entities/journey.entity';
 import { CreateJourneyDto } from './dto/create-journey.dto';
 import { UpdateJourneyDto } from './dto/update-journey.dto';
 import { AddStopDto } from './dto/add-stop.dto';
@@ -21,6 +21,7 @@ import { MoveStopDto } from './dto/move-stop.dto';
 import { UpdateStopDto } from './dto/update-stop.dto';
 import { TransferHostDto, ChangeMemberRoleDto } from './dto/permission-management.dto';
 import { AddExtraExpenseDto } from './dto/tracking.dto';
+import { VoteMoodDto } from './dto/vote-mood.dto';
 
 interface CurrentUser {
   sub: string;
@@ -47,9 +48,11 @@ export class JourneysController {
 @ApiQuery({ name: 'maxPrice', type: Number, required: false, description: 'Giá tối đa' })
 @ApiQuery({ name: 'startDate', type: String, required: false, description: 'Từ ngày (YYYY-MM-DD)' })
 @ApiQuery({ name: 'endDate', type: String, required: false, description: 'Đến ngày (YYYY-MM-DD)' })
+@ApiQuery({ name: 'mood', enum: JourneyMood, required: false, description: 'Lọc theo định hướng/tâm trạng' }) // <-- THÊM DÒNG NÀY CHO SWAGGER
 getPublicFeed(
   @Query('search') search?: string,
   @Query('tag') tag?: JourneyTag,
+  @Query('mood') mood?: JourneyMood,
   @Query('minPrice') minPrice?: string,
   @Query('maxPrice') maxPrice?: string,
   @Query('startDate') startDate?: string,
@@ -61,7 +64,8 @@ getPublicFeed(
     minPrice ? parseInt(minPrice) : undefined,
     maxPrice ? parseInt(maxPrice) : undefined,
     startDate,
-    endDate
+    endDate,
+    mood
   );
 }
 
@@ -97,6 +101,17 @@ getPublicFeed(
     return this.journeysService.update(id, dto, userId);
   }
 
+  @Patch(':id/mood-vote')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '17. [SOCIAL] Bình chọn tâm trạng/định hướng chuyến đi' })
+  voteMood(
+    @Param('id') id: string, 
+    @Body() dto: VoteMoodDto, 
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.journeysService.voteMood(id, userId, dto.mood);
+  }
+  
   @Delete(':id')
   @ApiBearerAuth()
   @ApiOperation({ summary: '6. Xóa hành trình (Admin/Owner)' })
@@ -111,9 +126,25 @@ getPublicFeed(
     return this.journeysService.addStop(id, dto, userId);
   }
 
-  @Patch(':id/days/:dayId/stops/:stopId')
+@Patch(':id/days/:dayId/stops/:stopId')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Cập nhật thông tin chi tiết của một địa điểm (Stop)' })
+  @ApiOperation({ 
+    summary: 'Cập nhật thông tin địa điểm / Chốt Bill & Chia tiền',
+    description: `
+**Quyền hạn:**
+- **MEMBER & HOST:** Được phép sửa thông tin cơ bản: \`start_time\`, \`end_time\`, \`note\`, \`estimated_cost\`.
+- **Chỉ HOST:** Được phép chốt Bill thực tế và Chia tiền (\`actual_cost\`, \`cost_type\`, \`payers\`, \`splits\`). 
+*(Nếu MEMBER cố tình gửi data tài chính, hệ thống sẽ báo lỗi 403 Forbidden).*
+
+**Hướng dẫn chia tiền (Dành cho HOST):**
+1. **Chia đều (SHARED)**: 
+   - Không cần gửi mảng \`splits\`.
+   - Bắt buộc gửi \`actual_cost\` và \`payers\` (tổng \`amount_paid\` của \`payers\` phải = \`actual_cost\`).
+2. **Chia tùy chỉnh (CUSTOM)**:
+   - Đổi \`cost_type\` thành \`CUSTOM\`.
+   - Bắt buộc gửi mảng \`splits\` quy định số tiền từng người chịu (tổng \`amount_owed\` của \`splits\` phải = \`actual_cost\`).
+    `
+  })
   updateStop(
     @Param('id') id: string,
     @Param('dayId') dayId: string,
@@ -123,6 +154,7 @@ getPublicFeed(
   ) {
     return this.journeysService.updateStop(id, dayId, stopId, dto, userId);
   }
+
   
   @Delete(':id/days/:dayNumber/stops/:stopId')
   @ApiBearerAuth()

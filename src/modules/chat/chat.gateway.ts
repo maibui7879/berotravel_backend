@@ -56,30 +56,33 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Client mở một phòng chat cụ thể (màn hình chat)
 @SubscribeMessage('join_room')
-  async handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { room_id?: string, journey_id?: string }) {
+async handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { room_id?: string, journey_id?: string }) {
     try {
       const userId = client.data.user?.sub;
       if (!userId) return;
 
       let targetRoomId = data.room_id;
 
-      // Nếu client chỉ truyền journey_id lên, ta sẽ tìm/tạo roomId tương ứng
+      // Nếu client chỉ truyền journey_id lên
       if (!targetRoomId && data.journey_id) {
         targetRoomId = await this.chatService.getOrCreateJourneyRoom(data.journey_id, userId);
       }
 
       if (targetRoomId) {
+        // [VÁ LỖI BẢO MẬT]: Bắt buộc kiểm tra quyền của User trước khi cho phép tham gia Socket Room
+        await this.chatService.checkUserInRoom(targetRoomId, userId);
+
         const roomIdStr = `room_${targetRoomId}`;
         client.join(roomIdStr);
         console.log(`User ${userId} joined socket room: ${roomIdStr}`);
         
-        // Trả về cho frontend biết roomId thực tế để dùng cho luồng Vote/React
         client.emit('room_joined_success', { room_id: targetRoomId });
       } else {
         client.emit('error', { message: 'Phải cung cấp room_id hoặc journey_id' });
       }
     } catch (error) {
       console.error('Lỗi khi join room:', error.message);
+      // Nếu user không có quyền (bị hàm checkUserInRoom ném ra ForbiddenException), chặn việc Join
       client.emit('error', { message: error.message });
     }
   }

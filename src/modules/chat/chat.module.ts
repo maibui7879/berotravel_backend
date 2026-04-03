@@ -8,15 +8,17 @@ import { JwtModule } from '@nestjs/jwt';
 import { User } from '../users/entities/user.entity';
 import { JourneysModule } from '../journey/journey.module';
 import { ChatConversation } from './entities/chat.entity';
-
+import { NotificationsService } from '../notification/notification.service';
+import { NotificationsModule } from '../notification/notification.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([ChatMessage, ChatConversation, User]),
     JwtModule.register({}), 
-    forwardRef(() => JourneysModule)
+    forwardRef(() => JourneysModule),
+    NotificationsModule,
   ],
   controllers: [ChatController],
-  providers: [ChatService, ChatGateway],
+  providers: [ChatService, ChatGateway,],
   exports: [ChatService],
 })
 export class ChatModule {}

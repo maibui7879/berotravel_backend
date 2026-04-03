@@ -7,7 +7,8 @@ import { ObjectId } from 'mongodb';
 import { SendMessageDto, SearchChatDto } from './dto/chat.dto';
 import { JourneysService } from '../journey/services/journey.service';
 import { User } from '../users/entities/user.entity';
-
+import { NotificationsService } from '../notification/notification.service';
+import { NotificationType } from '../notification/entities/notification.entity'; // Sửa lại đường dẫn relative cho chuẩn
 @Injectable()
 export class ChatService {
   constructor(
@@ -21,6 +22,8 @@ export class ChatService {
     private readonly userRepo: MongoRepository<User>,
 
     private readonly journeysService: JourneysService,
+
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // 1. Lấy danh sách hội thoại của user
@@ -126,6 +129,17 @@ export class ChatService {
 
     const savedMsg = await this.chatRepo.save(message);
 
+    if (dto.receiver_id) {
+      await this.notificationsService.createAndSend({
+        recipient_id: dto.receiver_id,
+        sender_id: userId,
+        sender_avatar: sender?.avatar,
+        type: NotificationType.NEW_MESSAGE, // Enum có sẵn trong notification.entity.ts
+        title: `Tin nhắn mới từ ${sender?.fullName}`,
+        message: dto.content || 'Bạn có một hình ảnh mới',
+        metadata: { room_id: roomId, type: 'DIRECT_CHAT' }
+      });
+    }
     // Cập nhật last_message của Conversation
     await this.conversationRepo.update(new ObjectId(roomId), {
       last_message: dto.content || `[${dto.type}]`,
@@ -136,12 +150,42 @@ export class ChatService {
   }
 
   // KIỂM TRA QUYỀN TRUY CẬP PHÒNG
-  private async checkUserInRoom(roomId: string, userId: string) {
+public async checkUserInRoom(roomId: string, userId: string) {
     const room = await this.conversationRepo.findOne({ where: { _id: new ObjectId(roomId) } });
     if (!room) throw new BadRequestException('Phòng chat không tồn tại');
-    if (room.participant_ids && !room.participant_ids.includes(userId)) {
-      throw new ForbiddenException('Bạn không có quyền truy cập vào phòng chat này');
+
+    // [VÁ LỖI ĐỒNG BỘ MEMBER]: Kiểm tra với phòng chat Hành trình
+    if (room.type === ConversationType.JOURNEY && room.journey_id) {
+       // Lấy thông tin chuyến đi mới nhất
+       const journey = await this.journeysService.findOne(room.journey_id).catch(() => null);
+       if (!journey) throw new ForbiddenException('Chuyến đi không tồn tại');
+       
+       const isMember = journey.members.some(m => String(m.user_id) === String(userId));
+       const isOwner = String(journey.owner_id) === String(userId);
+       
+       if (!isMember && !isOwner) {
+         throw new ForbiddenException('Bạn không còn là thành viên của hành trình này');
+       }
+       
+       // Tự động đồng bộ mảng participant_ids cho bảng Chat
+       const newParticipantIds = journey.members.map(m => String(m.user_id));
+       if (journey.owner_id && !newParticipantIds.includes(String(journey.owner_id))) {
+         newParticipantIds.push(String(journey.owner_id));
+       }
+       
+       // So sánh, nếu danh sách cũ bị lệch so với danh sách mới thì lưu lại
+       if (JSON.stringify(room.participant_ids) !== JSON.stringify(newParticipantIds)) {
+          room.participant_ids = newParticipantIds;
+          await this.conversationRepo.save(room);
+       }
+    } 
+    // Nếu là phòng chat 1-1 (DIRECT)
+    else {
+      if (room.participant_ids && !room.participant_ids.includes(userId)) {
+        throw new ForbiddenException('Bạn không có quyền truy cập vào phòng chat này');
+      }
     }
+
     return room;
   }
 

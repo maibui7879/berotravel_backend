@@ -1,7 +1,7 @@
-import { Controller, Get, Delete, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Delete, Param, Query, UseGuards, BadRequestException, Post, Body } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { SearchChatDto } from './dto/chat.dto';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { AtGuard } from '../../common/guards/at.guard';
 import { RolesGuard } from '../../common/guards/role.guard';
@@ -60,5 +60,25 @@ export class ChatController {
   @ApiOperation({ summary: 'Admin xóa tin nhắn vi phạm' })
   async deleteMessage(@Param('messageId') messageId: string) {
       return this.chatService.deleteMessage(messageId);
+  }
+
+  @Post('direct')
+  @ApiOperation({ summary: 'Tạo hoặc lấy phòng chat 1-1 với user khác' })
+  @ApiBody({
+    description: 'Thông tin phòng chat 1-1',
+    schema: {
+      type: 'object',
+      required: ['receiver_id'],
+      properties: {
+        receiver_id: { type: 'string' }
+      }
+    }
+  })
+  async createDirectChat(
+    @Body('receiver_id') receiverId: string,
+    @GetCurrentUser('sub') userId: string
+  ) {
+    if (!receiverId) throw new BadRequestException('Vui lòng cung cấp receiver_id');
+    return this.chatService.getOrCreateDirectRoom(userId, receiverId);
   }
 }

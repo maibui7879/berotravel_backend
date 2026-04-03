@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsString, IsDateString, IsOptional, IsNumber, IsArray, Min, IsEnum } from 'class-validator';
-import { JourneyTag, JourneyVisibility } from '../entities/journey.entity';
+import { JourneyMood, JourneyTag, JourneyVisibility } from '../entities/journey.entity';
 
 export class CreateJourneyDto {
   @ApiProperty({ example: 'Hành trình khám phá Phú Thọ' }) 
@@ -39,4 +39,9 @@ export class CreateJourneyDto {
   @IsArray()
   @IsString({ each: true })
   tags?: JourneyTag[];
+
+  @ApiPropertyOptional({ enum: JourneyMood, description: 'Chọn tâm trạng ngay lúc tạo (Solo mode)' })
+  @IsOptional()
+  @IsEnum(JourneyMood)
+  primary_mood?: JourneyMood;
 }

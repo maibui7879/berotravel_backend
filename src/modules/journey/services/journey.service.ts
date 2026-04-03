@@ -26,6 +26,9 @@ import { BookingsService } from '../../bookings/bookings.service';
 import { ChatMessage, MessageType } from 'src/modules/chat/entities/chat-message.entity';
 import { User } from '../../../modules/users/entities/user.entity';
 import { AddExtraExpenseDto } from '../dto/tracking.dto';
+import { VoteMoodDto } from '../dto/vote-mood.dto';
+import { JourneyMood } from '../entities/journey.entity';
+
 export interface AlbumItem {
   source: 'check-in' | 'chat';
   url: string;
@@ -95,11 +98,64 @@ export class JourneysService {
       total_budget: 0,
       cost_per_person: 0,
       planned_members_count: dto.planned_members_count || 1,
-      visibility: JourneyVisibility.PRIVATE
+      visibility: JourneyVisibility.PRIVATE,
+      primary_mood: dto.primary_mood || null,
+      mood_votes: dto.primary_mood 
+      ? [{ user_id: userId, mood: dto.primary_mood, voted_at: new Date() }] 
+      : [],      
     });
     const savedJourney = await this.journeyRepo.save(journey);
 
     return savedJourney;
+  }
+
+async voteMood(journeyId: string, userId: string, mood: JourneyMood): Promise<Journey> {
+    await this.permissionService.requireEditPermission(journeyId, userId, 'Bình chọn định hướng');
+    
+    const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
+
+    if (!journey.mood_votes) {
+      journey.mood_votes = [];
+    }
+
+    const existingVote = journey.mood_votes.find(v => v.user_id === userId);
+    if (existingVote) {
+      existingVote.mood = mood; 
+      existingVote.voted_at = new Date();
+    } else {
+      journey.mood_votes.push({ 
+        user_id: userId,
+        mood: mood,
+        voted_at: new Date()
+      });
+    }
+
+    // Tính toán số đông (Majority) TRƯỚC KHI SAVE
+    const moodCounts = journey.mood_votes.reduce((acc, vote) => {
+      acc[vote.mood] = (acc[vote.mood] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    let winningMood = journey.primary_mood;
+    let maxVotes = 0;
+    for (const [m, count] of Object.entries(moodCounts)) {
+      if (count > maxVotes) {
+        maxVotes = count;
+        winningMood = m as JourneyMood;
+      }
+    }
+
+    // Gán lại primary_mood nếu có thay đổi
+    if (winningMood !== journey.primary_mood) {
+        journey.primary_mood = winningMood;
+    }
+
+    // SAVE 1 LẦN DUY NHẤT TẠI ĐÂY
+    await this.journeyRepo.save(journey);
+
+    this.notifyMembers(journey, userId, `đã bình chọn định hướng: ${mood}`);
+
+    return journey;
   }
 
   async findOne(id: string, userId?: string): Promise<Journey> {
@@ -124,6 +180,7 @@ export class JourneysService {
     maxPrice?: number,
     startDate?: string,
     endDate?: string,
+    mood?: JourneyMood,
   ): Promise<Journey[]> {
     const filter: any = { 
       visibility: JourneyVisibility.PUBLIC 
@@ -137,6 +194,10 @@ export class JourneysService {
     // 2. Lọc theo Tag
     if (tag) {
       filter.tags = { $in: [tag] };
+    }
+
+    if (mood) {
+      filter.primary_mood = mood; 
     }
 
     // 3. Lọc theo chi phí ước tính (cost_per_person)
@@ -388,7 +449,7 @@ async updateStop(
     dto: UpdateStopDto, 
     userId: string
   ): Promise<Journey> {
-    await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nhật điểm dừng');
+await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nhật điểm dừng');
 
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
     const day = journey.days.find(d => d.id === dayId);
@@ -400,13 +461,26 @@ async updateStop(
     if (journey.status === JourneyStatus.COMPLETED) {
       throw new BadRequestException('Hành trình đã kết thúc, không thể chỉnh sửa chi phí.');
     }
-    // Cập nhật thông tin cơ bản
+
+    // Cập nhật thông tin cơ bản (MEMBER và HOST đều sửa được)
     if (dto.start_time !== undefined) stop.start_time = dto.start_time;
     if (dto.end_time !== undefined) stop.end_time = dto.end_time;
     if (dto.note !== undefined) stop.note = dto.note;
     if (dto.is_manual_cost !== undefined) stop.is_manual_cost = dto.is_manual_cost;
 
     // --- LOGIC TÀI CHÍNH ---
+    // [THÊM MỚI] Chặn MEMBER cập nhật chi phí thực tế & chia bill
+    const hasFinancialUpdate = 
+      dto.actual_cost !== undefined || 
+      dto.cost_type !== undefined || 
+      dto.payers !== undefined || 
+      dto.splits !== undefined;
+
+    if (hasFinancialUpdate && journey.owner_id !== userId) {
+      throw new ForbiddenException('Chỉ HOST (chủ chuyến đi) mới có quyền cập nhật chi phí thực tế và chia tiền.');
+    }
+
+    // Các logic cập nhật dưới đây sẽ chỉ chạy lọt qua nếu user là HOST (khi có mang theo data tài chính)
     if (dto.estimated_cost !== undefined) {
       stop.estimated_cost = dto.estimated_cost;
     }
