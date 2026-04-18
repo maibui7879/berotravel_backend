@@ -26,8 +26,8 @@ export class PostStats {
 
 // Geo-tagging coordinates
 export class LocationCoordinates {
-  @ApiProperty() latitude: number;
-  @ApiProperty() longitude: number;
+  @ApiProperty() latitude!: number;
+  @ApiProperty() longitude!: number;
   @ApiProperty({ nullable: true }) address?: string;
   @ApiProperty({ nullable: true }) place_name?: string;
 }
@@ -35,19 +35,19 @@ export class LocationCoordinates {
 // FIND_BUDDY specific fields
 export class FindBuddyDetails {
   @ApiProperty({ description: 'Ngày khởi hành dự kiến' })
-  travel_date: Date;
+  travel_date!: Date;
 
   @ApiProperty({ description: 'Ngân sách dự kiến (VND)' })
-  budget_range: string; // Ví dụ: "1000000-3000000" hoặc "< 1000000"
+  budget_range!: string; // Ví dụ: "1000000-3000000" hoặc "< 1000000"
 
   @ApiProperty({ description: 'Số người hiện có trong nhóm' })
-  current_members: number;
+  current_members!: number;
 
   @ApiProperty({ description: 'Số người cần tìm' })
-  looking_for_members: number;
+  looking_for_members!: number;
 
   @ApiProperty({ description: 'Tổng số người mong muốn' })
-  total_members_needed: number;
+  total_members_needed!: number;
 
   @ApiPropertyOptional({ description: 'Mô tả chi tiết về chuyến đi' })
   trip_description?: string;
@@ -55,25 +55,25 @@ export class FindBuddyDetails {
 
 @Entity('forum_posts')
 export class ForumPost {
-  @ObjectIdColumn() _id: ObjectId;
+  @ObjectIdColumn() _id!: ObjectId;
 
-  @Column() @Index() author_id: string;
+  @Column() @Index() author_id!: string;
 
-  @Column() title: string;
+  @Column() title!: string;
 
-  @Column() content: string;
+  @Column() content!: string;
 
-  @Column('json', { default: [] }) images: string[];
+  @Column('json', { default: [] }) images!: string[];
 
   @Column({ type: 'enum', enum: ForumCategory, default: ForumCategory.OTHERS })
   @Index()
-  category: ForumCategory;
+  category!: ForumCategory;
 
-  @Column('json', { default: [] }) @Index() tag_ids: string[];
+  @Column('json', { default: [] }) @Index() tag_ids!: string[];
 
-  @Column('json', { default: [] }) @Index() place_ids: string[];
+  @Column('json', { default: [] }) @Index() place_ids!: string[];
 
-  @Column({ nullable: true }) @Index() journey_id: string;
+  @Column({ nullable: true }) @Index() journey_id!: string;
 
   @Column('json', { nullable: true })
   location?: LocationCoordinates; // Geo-tagging: Tọa độ địa điểm bài viết
@@ -83,19 +83,19 @@ export class ForumPost {
 
   @Column('json') stats: PostStats = new PostStats();
 
-  @Column('json', { default: [] }) liked_by: string[]; // Danh sách userId đã like
+  @Column('json', { default: [] }) liked_by!: string[]; // Danh sách userId đã like
 
   @Column({ type: 'enum', enum: PostStatus, default: PostStatus.PUBLISHED })
   @Index()
-  status: PostStatus;
+  status!: PostStatus;
 
-  @Column({ default: false }) is_pinned: boolean;
+  @Column({ default: false }) is_pinned!: boolean;
 
   @Column({ default: 0 })
-  reports_count: number; // Số lượng báo cáo
+  reports_count!: number; // Số lượng báo cáo
 
-  @CreateDateColumn() created_at: Date;
-  @UpdateDateColumn() updated_at: Date;
+  @CreateDateColumn() created_at!: Date;
+  @UpdateDateColumn() updated_at!: Date;
 }
 export enum PostSortBy {
   LATEST = 'latest',     // Mới nhất
@@ -104,30 +104,32 @@ export enum PostSortBy {
 }
 @Entity('forum_tags')
 export class ForumTag {
-  @ObjectIdColumn() _id: ObjectId;
+  @ObjectIdColumn() _id!: ObjectId;
 
   @Column() @Index({ unique: true })
-  name: string; // Tên hashtag (không bao gồm dấu #)
+  name!: string; // Tên hashtag (không bao gồm dấu #)
 
   @Column({ default: 0 })
-  use_count: number; 
+  use_count!: number; 
 
-  @CreateDateColumn() created_at: Date;
+  @CreateDateColumn() created_at!: Date;
 }
 
 @Entity('forum_comments')
 export class ForumComment {
-  @ObjectIdColumn() _id: ObjectId;
+  @ObjectIdColumn() _id!: ObjectId;
 
-  @Column() @Index() post_id: string;
+  @Column() @Index() post_id!: string;
 
-  @Column() @Index() author_id: string;
+  @Column() @Index() author_id!: string;
 
-  @Column() content: string;
+  @Column() content!: string;
 
-  @Column({ nullable: true }) @Index() parent_id: string; // Để làm comment đa cấp
+  @Column({ nullable: true }) @Index() parent_id!: string; // Để làm comment đa cấp
 
-  @Column('json', { default: [] }) liked_by: string[];
+  @Column('json', { default: [] }) liked_by!: string[];
 
-  @CreateDateColumn() created_at: Date;
+  @CreateDateColumn() created_at!: Date;
+
+  @UpdateDateColumn() updated_at!: Date;
 }

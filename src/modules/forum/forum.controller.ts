@@ -3,7 +3,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ForumService } from './services/forum.service';
-import { CreatePostDto, CreateCommentDto, PostSearchFilterDto } from './dto/forum.dto';
+import { CreatePostDto, CreateCommentDto, PostSearchFilterDto, UpdateCommentDto, UpdatePostDto } from './dto/forum.dto';
 import { UpdateForumDto } from './dto/update-forum.dto';
 import { ReportPostDto } from './dto/forum-report.dto';
 import { AtGuard } from '../../common/guards/at.guard';
@@ -38,6 +38,16 @@ export class ForumController {
     return this.forumService.create(dto, userId);
   }
 
+  @Patch('posts/:id')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Chỉnh sửa bài viết' })
+  updatePost(
+    @Param('id') id: string, 
+    @Body() dto: UpdatePostDto, 
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.forumService.updatePost(id, userId, dto);
+  }
 
   @Get('posts')
   @Public()
@@ -94,5 +104,41 @@ export class ForumController {
     @GetCurrentUser('role') role: string
   ) {
     return this.forumService.remove(id, userId, role === Role.ADMIN);
+  }
+
+  // ==========================================
+  // COMMENT MANAGEMENT APIs
+  // ==========================================
+
+  @Patch('comments/:id')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Chỉnh sửa nội dung bình luận' })
+  updateComment(
+    @Param('id') id: string, 
+    @Body() dto: UpdateCommentDto, 
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.forumService.updateComment(id, userId, dto);
+  }
+
+  @Delete('comments/:id')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xóa bình luận (Tác giả comment/Tác giả bài viết/Admin)' })
+  removeComment(
+    @Param('id') id: string, 
+    @GetCurrentUser('sub') userId: string,
+    @GetCurrentUser('role') role: string
+  ) {
+    return this.forumService.removeComment(id, userId, role === Role.ADMIN);
+  }
+
+  @Patch('comments/:id/like')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Like/Unlike bình luận' })
+  toggleCommentLike(
+    @Param('id') id: string, 
+    @GetCurrentUser('sub') userId: string
+  ) {
+    return this.forumService.toggleCommentLike(id, userId);
   }
 }

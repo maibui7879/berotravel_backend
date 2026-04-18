@@ -276,7 +276,7 @@ async voteMood(journeyId: string, userId: string, mood: JourneyMood): Promise<Jo
     if (journey.owner_id === userId) throw new BadRequestException('Bạn là chủ sở hữu');
 
     await this.requestJoinJourney(journeyId, userId);
-    this.notifyMembers(journey, journey.owner_id, `muốn tham gia hành trình: "${dto.message || ''}"`, undefined, userId);
+    this.notifyMembers(journey, userId, `muốn tham gia hành trình: "${dto.message || ''}"`);
 
     return { success: true, message: 'Đã gửi yêu cầu tham gia' };
   }
@@ -649,7 +649,7 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
     
     await this.journeyRepo.save(journey);
     await this.budgetService.syncSmartBudget(journey);
-
+    this.notifyMembers(journey, userId, 'đã gia nhập hành trình thông qua mã mời');
     return journey;
   }
 
@@ -722,7 +722,7 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
       message: `Yêu cầu tham gia "${journey.name}" đã được chấp nhận!`,
       metadata: { journey_id: journeyId }
     });
-
+    this.notifyMembers(journey, requestUserId, 'đã chính thức tham gia hành trình');
     return journey;
   }
 

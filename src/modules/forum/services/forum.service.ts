@@ -6,7 +6,7 @@ import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 import { ForumPost, ForumComment, PostStatus, PostSortBy, ForumTag } from '../entities/forum.entity';
 import { ForumReport, ReportStatus } from '../entities/forum-report.entity';
-import { CreatePostDto, CreateCommentDto, PostSearchFilterDto } from '../dto/forum.dto';
+import { CreatePostDto, CreateCommentDto, PostSearchFilterDto, UpdatePostDto } from '../dto/forum.dto';
 import { UpdateForumDto } from '../dto/update-forum.dto';
 import { ReportPostDto } from '../dto/forum-report.dto';
 import { NotificationsService } from '../../notification/notification.service';
@@ -121,8 +121,8 @@ export class ForumService {
       });
 
       const existingPlacesCount = await this.placeRepo.count({
-        where: { _id: { $in: validPlaceIds } } as any
-      });
+        _id: { $in: validPlaceIds }
+      } as any);
 
       if (existingPlacesCount !== validPlaceIds.length) {
         throw new BadRequestException('Một hoặc nhiều địa điểm gắn kèm không tồn tại trong hệ thống');
@@ -155,6 +155,37 @@ export class ForumService {
   /**
    * Cập nhật bài viết với validation cho journey và places
    */
+  async updatePost(postId: string, userId: string, dto: UpdatePostDto) {
+    // 1. Tìm bài viết và kiểm tra quyền
+    const post = await this.postRepo.findOne({ where: { _id: new ObjectId(postId) } });
+    if (!post) throw new NotFoundException('Bài viết không tồn tại');
+    
+    if (post.author_id !== userId) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa bài viết này');
+    }
+
+    // 2. Validate lại Journey và Places nếu payload có gửi lên
+    if (dto.journey_id !== undefined || dto.place_ids !== undefined) {
+      const checkJourneyId = dto.journey_id !== undefined ? dto.journey_id : post.journey_id;
+      const checkPlaceIds = dto.place_ids !== undefined ? dto.place_ids : post.place_ids;
+      await this.validateJourneyAndPlaces(checkJourneyId, checkPlaceIds);
+    }
+
+    // 3. Xử lý cập nhật lại Hashtags nếu Title hoặc Content bị thay đổi
+    if (dto.title || dto.content) {
+      const newTitle = dto.title || post.title;
+      const newContent = dto.content || post.content;
+      const hashtags = this.extractHashtags(newTitle, newContent);
+      const autoTagIds = await this.syncTags(hashtags);
+      post.tag_ids = autoTagIds;
+    }
+
+    // 4. Ghi đè các trường mới vào bài viết hiện tại
+    Object.assign(post, dto);
+
+    // Lưu lại vào DB (Trường updated_at sẽ tự động cập nhật nhờ @UpdateDateColumn trong Entity)
+    return await this.postRepo.save(post);
+  }
 
   async findAll(filter: PostSearchFilterDto) {
     const { search, category, place_id, author_id, tag, sortBy, page = 1, limit = 10 } = filter;
@@ -301,6 +332,78 @@ export class ForumService {
     ]).toArray();
 
     return commentWithAuthor.length > 0 ? commentWithAuthor[0] : savedComment;
+  }
+
+  /**
+   * Cập nhật bình luận
+   */
+  async updateComment(commentId: string, userId: string, dto: CreateCommentDto) {
+    const comment = await this.commentRepo.findOne({ where: { _id: new ObjectId(commentId) } });
+    if (!comment) throw new NotFoundException('Bình luận không tồn tại');
+    
+    if (comment.author_id !== userId) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa bình luận này');
+    }
+
+    comment.content = dto.content;
+    return await this.commentRepo.save(comment);
+  }
+
+  /**
+   * Xóa bình luận
+   */
+  async removeComment(commentId: string, userId: string, isAdmin: boolean) {
+    const comment = await this.commentRepo.findOne({ where: { _id: new ObjectId(commentId) } });
+    if (!comment) throw new NotFoundException('Bình luận không tồn tại');
+
+    // Lấy thông tin post để kiểm tra xem user có phải là chủ bài viết không
+    const post = await this.postRepo.findOne({ where: { _id: new ObjectId(comment.post_id) } });
+    
+    const isCommentAuthor = comment.author_id === userId;
+    const isPostAuthor = post && post.author_id === userId;
+
+    // Quyền xóa: Tác giả bình luận, Tác giả bài viết chứa bình luận đó, hoặc Admin
+    if (!isCommentAuthor && !isPostAuthor && !isAdmin) {
+      throw new ForbiddenException('Bạn không có quyền xóa bình luận này');
+    }
+
+    await this.commentRepo.delete(new ObjectId(commentId));
+
+    // Cập nhật lại số lượng comment của bài viết
+    if (post && post.stats.comments > 0) {
+      post.stats.comments -= 1;
+      await this.postRepo.save(post);
+    }
+
+    return { success: true, message: 'Đã xóa bình luận' };
+  }
+
+  /**
+   * Like / Unlike bình luận
+   */
+  async toggleCommentLike(commentId: string, userId: string) {
+    const comment = await this.commentRepo.findOne({ where: { _id: new ObjectId(commentId) } });
+    if (!comment) throw new NotFoundException('Bình luận không tồn tại');
+
+    const index = comment.liked_by.indexOf(userId);
+    if (index === -1) {
+      comment.liked_by.push(userId);
+      // (Tùy chọn) Gửi thông báo cho chủ comment ở đây tương tự như bài đăng
+      if (comment.author_id !== userId) {
+        this.notificationsService.createAndSend({
+          recipient_id: comment.author_id,
+          sender_id: userId,
+          type: NotificationType.SYSTEM,
+          title: 'Tương tác mới',
+          message: `Ai đó đã thích bình luận của bạn`,
+          metadata: { comment_id: commentId, post_id: comment.post_id }
+        });
+      }
+    } else {
+      comment.liked_by.splice(index, 1);
+    }
+
+    return await this.commentRepo.save(comment);
   }
 
   async remove(postId: string, userId: string, isAdmin: boolean) {

@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsEnum, IsOptional, IsArray, IsNumber, Min, IsDate, IsBoolean} from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { ForumCategory, PostStatus } from '../entities/forum.entity';
 import { Type } from 'class-transformer';
 import { UserMinifiedDto } from '../../users/dto/user-minified.dto';
@@ -37,9 +37,9 @@ export class PostSearchFilterDto {
 }
 
 export class CreatePostDto {
-  @ApiProperty() @IsString() @IsNotEmpty() title: string;
-  @ApiProperty() @IsString() @IsNotEmpty() content: string;
-  @ApiProperty({ enum: ForumCategory }) @IsEnum(ForumCategory) category: ForumCategory;
+  @ApiProperty() @IsString() @IsNotEmpty() title!: string;
+  @ApiProperty() @IsString() @IsNotEmpty() content!: string;
+  @ApiProperty({ enum: ForumCategory }) @IsEnum(ForumCategory) category!: ForumCategory;
   @ApiPropertyOptional() @IsArray() @IsOptional() images?: string[];
   @ApiPropertyOptional() @IsArray() @IsOptional() place_ids?: string[];
   @ApiPropertyOptional() @IsString() @IsOptional() journey_id?: string;
@@ -55,31 +55,40 @@ export class CreatePostDto {
   is_pinned?: boolean;
 }
 
+export class UpdatePostDto extends PartialType(CreatePostDto) {}
+
 /**
  * ForumPostResponseDto - Returned with author info embedded
  * Includes author fullName and avatar to reduce FE requests
  */
 export class ForumPostResponseDto {
-  @ApiProperty() id: string;
-  @ApiProperty() title: string;
-  @ApiProperty() content: string;
+  @ApiProperty() id!: string;
+  @ApiProperty() title!: string;
+  @ApiProperty() content!: string;
   @ApiProperty({ type: UserMinifiedDto }) author?: UserMinifiedDto;
-  @ApiProperty({ type: [String] }) images: string[];
-  @ApiProperty({ enum: ForumCategory }) category: ForumCategory;
-  @ApiProperty({ type: [String] }) tag_ids: string[];
-  @ApiProperty({ type: [String] }) place_ids: string[];
+  @ApiProperty({ type: [String] }) images!: string[];
+  @ApiProperty({ enum: ForumCategory }) category!: ForumCategory;
+  @ApiProperty({ type: [String] }) tag_ids!: string[];
+  @ApiProperty({ type: [String] }) place_ids!: string[];
   @ApiPropertyOptional() journey_id?: string;
-  @ApiProperty() stats: { likes: number; views: number; comments: number };
-  @ApiProperty() status: string;
-  @ApiProperty() is_pinned: boolean;
-  @ApiProperty() reports_count: number;
-  @ApiProperty() created_at: Date;
-  @ApiProperty() updated_at: Date;
+  @ApiProperty() stats!: { likes: number; views: number; comments: number };
+  @ApiProperty() status!: string;
+  @ApiProperty() is_pinned!: boolean;
+  @ApiProperty() reports_count!: number;
+  @ApiProperty() created_at!: Date;
+  @ApiProperty() updated_at!: Date;
 }
 
 export class CreateCommentDto {
-  @ApiProperty() @IsString() @IsNotEmpty() content: string;
+  @ApiProperty() @IsString() @IsNotEmpty() content!: string;
   @ApiPropertyOptional() @IsString() @IsOptional() parent_id?: string;
+}
+
+export class UpdateCommentDto {
+  @ApiProperty({ description: 'Nội dung bình luận mới' })
+  @IsString()
+  @IsNotEmpty()
+  content!: string;
 }
 
 /**
@@ -87,12 +96,13 @@ export class CreateCommentDto {
  * Includes author fullName and avatar to reduce FE requests
  */
 export class ForumCommentResponseDto {
-  @ApiProperty() id: string;
-  @ApiProperty() post_id: string;
-  @ApiProperty() content: string;
+  @ApiProperty() id!: string;
+  @ApiProperty() post_id!: string;
+  @ApiProperty() content!: string;
   @ApiProperty({ type: UserMinifiedDto }) author?: UserMinifiedDto;
   @ApiPropertyOptional() parent_id?: string;
-  @ApiProperty() liked_by: string[];
-  @ApiProperty() created_at: Date;
+  @ApiProperty() liked_by!: string[];
+  @ApiProperty() created_at!: Date;
+  @ApiProperty() updated_at!: Date;
 }
 
