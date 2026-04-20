@@ -21,33 +21,33 @@ export enum ReportStatus {
 
 @Entity('forum_reports')
 export class ForumReport {
-  @ObjectIdColumn() _id: ObjectId;
+  @ObjectIdColumn() _id!: ObjectId;
 
-  @Column() @Index() post_id: string;
+  @Column() @Index() post_id!: string;
 
-  @Column() @Index() reporter_id: string;
+  @Column() @Index() reporter_id!: string;
 
-  @Column() author_id: string;
+  @Column() author_id!: string;
 
   @Column({ type: 'enum', enum: ReportReason, default: ReportReason.OTHERS })
   @Index()
-  reason: ReportReason;
+  reason!: ReportReason;
 
   @Column({ nullable: true })
-  description: string; // Mô tả chi tiết lý do báo cáo
+  description!: string; // Mô tả chi tiết lý do báo cáo
 
   @Column({ type: 'enum', enum: ReportStatus, default: ReportStatus.PENDING })
   @Index()
-  status: ReportStatus;
+  status!: ReportStatus;
 
   @Column({ nullable: true })
-  admin_notes: string; // Ghi chú của Admin khi xử lý
+  admin_notes!: string; // Ghi chú của Admin khi xử lý
 
   @Column({ nullable: true })
-  handled_by_admin_id: string; // Admin xử lý báo cáo
+  handled_by_admin_id!: string; // Admin xử lý báo cáo
 
-  @CreateDateColumn() created_at: Date;
+  @CreateDateColumn() created_at!: Date;
 
   @Column({ nullable: true })
-  resolved_at: Date;
+  resolved_at!: Date;
 }

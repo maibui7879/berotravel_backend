@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
@@ -39,10 +39,18 @@ export class NotificationsService {
   }
 
   // 3. ĐÁNH DẤU ĐÃ ĐỌC
-  async markAsRead(id: string, userId: string) {
+async markAsRead(id: string, userId: string) {
+    // Bổ sung: Kiểm tra tính hợp lệ của id trước khi ép kiểu
+    if (!ObjectId.isValid(id)) {
+      throw new BadRequestException('ID thông báo không hợp lệ');
+    }
+
     const notif = await this.notifRepo.findOne({ where: { _id: new ObjectId(id) } });
+    
+    // Nếu không tìm thấy, trả về 404
     if (!notif) throw new NotFoundException('Thông báo không tồn tại');
 
+    // Kiểm tra quyền sở hữu
     if (notif.recipient_id !== userId) {
         throw new NotFoundException('Bạn không sở hữu thông báo này');
     }

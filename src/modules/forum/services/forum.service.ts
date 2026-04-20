@@ -308,31 +308,51 @@ export class ForumService {
     return await this.postRepo.save(post);
   }
 
-  async addComment(postId: string, dto: CreateCommentDto, userId: string) {
-    const post = await this.postRepo.findOne({ where: { _id: new ObjectId(postId) } });
-    if (!post) throw new NotFoundException('Bài viết không tồn tại');
+async addComment(postId: string, dto: CreateCommentDto, userId: string) {
+  // 1. Kiểm tra bài viết tồn tại
+  const post = await this.postRepo.findOne({ where: { _id: new ObjectId(postId) } });
+  if (!post) throw new NotFoundException('Bài viết không tồn tại');
 
-    const comment = this.commentRepo.create({ ...dto, post_id: postId, author_id: userId, liked_by: [] });
-    const savedComment = await this.commentRepo.save(comment);
-
-    post.stats.comments += 1;
-    await this.postRepo.save(post);
-
-    const commentWithAuthor = await this.commentRepo.aggregate([
-      { $match: { _id: new ObjectId(savedComment._id.toString()) } },
-      { $addFields: { author_id_obj: { $toObjectId: '$author_id' } } },
-      { $lookup: { from: 'users', localField: 'author_id_obj', foreignField: '_id', as: 'authorData' } },
-      { $unwind: { path: '$authorData', preserveNullAndEmptyArrays: true } },
-      {
-        $project: {
-          _id: 1, post_id: 1, content: 1, parent_id: 1, liked_by: 1, created_at: 1,
-          author: { id: '$authorData._id', fullName: '$authorData.fullName', avatar: '$authorData.avatar' }
-        }
-      }
-    ]).toArray();
-
-    return commentWithAuthor.length > 0 ? commentWithAuthor[0] : savedComment;
+  // 2. Nếu có parent_id, kiểm tra bình luận cha có tồn tại không
+  if (dto.parent_id) {
+    if (!ObjectId.isValid(dto.parent_id)) {
+      throw new BadRequestException('ID bình luận gốc không hợp lệ');
+    }
+    const parentComment = await this.commentRepo.findOne({ where: { _id: new ObjectId(dto.parent_id) } });
+    if (!parentComment) throw new NotFoundException('Bình luận gốc không tồn tại');
   }
+
+  // 3. Khởi tạo comment (Gán tường minh dto.parent_id để tránh lỗi TypeORM Mongo bỏ qua trường)
+  const comment = this.commentRepo.create({ 
+    content: dto.content,
+    parent_id: dto.parent_id , 
+    post_id: postId, 
+    author_id: userId, 
+    liked_by: [] 
+  });
+  
+  const savedComment = await this.commentRepo.save(comment);
+
+  // 4. Tăng số lượng comment của bài viết
+  post.stats.comments += 1;
+  await this.postRepo.save(post);
+
+  // 5. Query lấy dữ liệu trả về kèm author
+  const commentWithAuthor = await this.commentRepo.aggregate([
+    { $match: { _id: new ObjectId(savedComment._id.toString()) } },
+    { $addFields: { author_id_obj: { $toObjectId: '$author_id' } } },
+    { $lookup: { from: 'users', localField: 'author_id_obj', foreignField: '_id', as: 'authorData' } },
+    { $unwind: { path: '$authorData', preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        _id: 1, post_id: 1, content: 1, parent_id: 1, liked_by: 1, created_at: 1,
+        author: { id: '$authorData._id', fullName: '$authorData.fullName', avatar: '$authorData.avatar' }
+      }
+    }
+  ]).toArray();
+
+  return commentWithAuthor.length > 0 ? commentWithAuthor[0] : savedComment;
+}
 
   /**
    * Cập nhật bình luận
@@ -452,6 +472,7 @@ export class ForumService {
           journey: { id: '$journeyData._id', name: '$journeyData.name' }
         }
       }
+      
     ];
 
     const postData = await this.postRepo.aggregate(pipeline).toArray();
@@ -480,7 +501,7 @@ export class ForumService {
       } catch (e) {}
     }
 
-    const comments = await this.commentRepo.aggregate([
+const flatComments = await this.commentRepo.aggregate([
       { $match: { post_id: postId } },
       { $addFields: { author_id_obj: { $toObjectId: '$author_id' } } },
       { $lookup: { from: 'users', localField: 'author_id_obj', foreignField: '_id', as: 'authorData' } },
@@ -491,10 +512,41 @@ export class ForumService {
           author: { id: '$authorData._id', fullName: '$authorData.fullName', avatar: '$authorData.avatar' }
         }
       },
-      { $sort: { created_at: -1 } }
+      { $sort: { created_at: -1 } } // Bình luận mới nhất lên đầu
     ]).toArray();
 
-    return { ...post, comments, journey_summary };
+    // 2. Thuật toán Build Tree (Chuyển Flat Array thành Nested Array)
+    const commentMap = new Map();
+    const rootComments: any[] = [];
+
+    // Khởi tạo map và thêm field `replies` rỗng cho mọi comment
+    flatComments.forEach(comment => {
+      comment.replies = [];
+      commentMap.set(comment._id.toString(), comment);
+    });
+
+    // Lắp ráp các reply vào đúng parent của nó
+    flatComments.forEach(comment => {
+      // Nếu có parent_id và parent đó tồn tại trong map
+      if (comment.parent_id && commentMap.has(comment.parent_id)) {
+        const parent = commentMap.get(comment.parent_id);
+        parent.replies.push(comment);
+      } else {
+        // Nếu không có parent_id (là comment gốc), hoặc parent đã bị xóa
+        rootComments.push(comment);
+      }
+    });
+
+    // Tùy chọn UI: Sắp xếp lại thứ tự của các Replies
+    // - Comment gốc: Đã sort mới nhất lên đầu (từ Query Mongo)
+    // - Replies: Nên sort cũ nhất xếp trước (từ trên xuống dưới) giống Facebook/Tiktok
+    rootComments.forEach(root => {
+      if (root.replies.length > 0) {
+        root.replies.sort((a: any, b: any) => a.created_at.getTime() - b.created_at.getTime());
+      }
+    });
+
+    return { ...post, comments: rootComments, journey_summary };
   }
 
   async reportPost(postId: string, reporterId: string, dto: ReportPostDto) {

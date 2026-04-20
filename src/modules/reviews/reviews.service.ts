@@ -188,9 +188,10 @@ export class ReviewsService {
     return stats[0];
   }
 
-  async syncPlaceStats(placeId: string) {
+async syncPlaceStats(placeId: string) {
+  try {
     const stats = await this.reviewRepo.aggregate([
-      { $match: { place_id: placeId, status: ReviewStatus.PUBLISHED } },
+      { $match: { place_id: placeId, status: 'PUBLISHED' } }, // Dùng string 'PUBLISHED' nếu Enum gặp lỗi
       { $group: { _id: '$place_id', avg: { $avg: '$rating' }, total: { $sum: 1 } } }
     ]).toArray();
 
@@ -199,25 +200,46 @@ export class ReviewsService {
       : { rating_avg: 0, review_count: 0 };
 
     await this.placeRepo.update(new ObjectId(placeId), updateData as any);
+  } catch (error) {
+    console.error('Sync Stats Error:', error);
+    // Không throw lỗi ở đây để tránh làm chết API chính, hoặc handle cẩn thận
   }
+}
 
-  async update(id: string, dto: any, userId: string) {
-    const review = await this.reviewRepo.findOne({ where: { _id: new ObjectId(id) } });
-    if (!review) throw new NotFoundException('Không tìm thấy review');
-    if (review.user_id !== userId) throw new ForbiddenException('Không có quyền');
+async update(id: string, dto: any, userId: string) {
+  // Đảm bảo ID hợp lệ trước khi tìm kiếm
+  if (!ObjectId.isValid(id)) throw new BadRequestException('ID không hợp lệ');
 
-    const diff = (new Date().getTime() - review.created_at.getTime()) / (1000 * 3600);
-    if (diff > 48) throw new BadRequestException('Chỉ được sửa trong vòng 48h');
+  const review = await this.reviewRepo.findOne({ where: { _id: new ObjectId(id) } });
+  if (!review) throw new NotFoundException('Không tìm thấy review');
+  if (review.user_id !== userId) throw new ForbiddenException('Không có quyền chỉnh sửa');
 
-    await this.reviewRepo.update(new ObjectId(id), dto);
-    await this.syncPlaceStats(review.place_id);
-    return this.reviewRepo.findOne({ where: { _id: new ObjectId(id) } });
-  }
+  const diff = (new Date().getTime() - review.created_at.getTime()) / (1000 * 3600);
+  if (diff > 48) throw new BadRequestException('Chỉ được sửa trong vòng 48h');
 
-  async toggleHelpful(id: string) {
-    await this.reviewRepo.increment({ _id: new ObjectId(id) } as any, 'helpful_count', 1);
-    return { success: true };
-  }
+  // Loại bỏ các trường không được phép cập nhật thủ công nếu có
+  const { _id, user_id, place_id, ...updateData } = dto;
+
+  await this.reviewRepo.update(new ObjectId(id), updateData);
+  
+  await this.syncPlaceStats(review.place_id);
+  return this.reviewRepo.findOne({ where: { _id: new ObjectId(id) } });
+}
+
+async toggleHelpful(id: string) {
+  if (!ObjectId.isValid(id)) throw new BadRequestException('ID không hợp lệ');
+  
+  const review = await this.reviewRepo.findOne({ where: { _id: new ObjectId(id) } });
+  if (!review) throw new NotFoundException('Không tìm thấy review');
+
+  // Sử dụng update thay vì increment để đảm bảo tính tương thích cao với MongoDB
+  await this.reviewRepo.update(
+    new ObjectId(id), 
+    { helpful_count: (review.helpful_count || 0) + 1 } as any
+  );
+  
+  return { success: true, current_helpful_count: (review.helpful_count || 0) + 1 };
+}
 
   // Merchant phản hồi review (chỉ chủ sở hữu địa điểm)
   async reply(id: string, content: string, user: any) {
@@ -270,13 +292,23 @@ export class ReviewsService {
     return { success: true, message: 'Phản hồi đã được xóa' };
   }
 
-  async remove(id: string, user: any) {
-    const review = await this.reviewRepo.findOne({ where: { _id: new ObjectId(id) } });
-    if (!review) throw new NotFoundException('Không tìm thấy review');
-    if (user.role !== 'ADMIN' && review.user_id !== user.sub) throw new ForbiddenException('Không có quyền');
+async remove(id: string, user: any) {
+  if (!ObjectId.isValid(id)) throw new BadRequestException('ID không hợp lệ');
 
-    await this.reviewRepo.delete(new ObjectId(id));
-    await this.syncPlaceStats(review.place_id);
-    return { success: true };
+  const review = await this.reviewRepo.findOne({ where: { _id: new ObjectId(id) } });
+  if (!review) throw new NotFoundException('Không tìm thấy review');
+
+  // Kiểm tra quyền: Admin hoặc chính chủ review
+  if (user.role !== 'ADMIN' && review.user_id !== user.sub) {
+    throw new ForbiddenException('Không có quyền xóa review này');
   }
+
+  const placeId = review.place_id;
+  await this.reviewRepo.delete(new ObjectId(id));
+  
+  // Quan trọng: Phải đảm bảo syncPlaceStats chạy sau khi đã xóa
+  await this.syncPlaceStats(placeId);
+  
+  return { success: true };
+}
 }
