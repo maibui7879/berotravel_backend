@@ -150,7 +150,6 @@ async voteMood(journeyId: string, userId: string, mood: JourneyMood): Promise<Jo
         journey.primary_mood = winningMood;
     }
 
-    // SAVE 1 LẦN DUY NHẤT TẠI ĐÂY
     await this.journeyRepo.save(journey);
 
     this.notifyMembers(journey, userId, `đã bình chọn định hướng: ${mood}`);
@@ -186,12 +185,11 @@ async voteMood(journeyId: string, userId: string, mood: JourneyMood): Promise<Jo
       visibility: JourneyVisibility.PUBLIC 
     };
 
-    // 1. Lọc theo tên (Search)
+
     if (search) {
       filter.name = { $regex: new RegExp(search, 'i') };
     }
 
-    // 2. Lọc theo Tag
     if (tag) {
       filter.tags = { $in: [tag] };
     }
@@ -200,16 +198,12 @@ async voteMood(journeyId: string, userId: string, mood: JourneyMood): Promise<Jo
       filter.primary_mood = mood; 
     }
 
-    // 3. Lọc theo chi phí ước tính (cost_per_person)
     if (minPrice !== undefined || maxPrice !== undefined) {
       filter.cost_per_person = {};
       if (minPrice !== undefined) filter.cost_per_person.$gte = minPrice;
       if (maxPrice !== undefined) filter.cost_per_person.$lte = maxPrice;
     }
 
-    // 4. Lọc theo thời gian diễn ra (Hành trình nằm TRONG khoảng start và end)
-    // Logic: start_date của hành trình >= startDate của filter 
-    // VÀ end_date của hành trình <= endDate của filter
     if (startDate || endDate) {
       if (startDate) {
         filter.start_date = { $gte: new Date(startDate) };
@@ -227,7 +221,6 @@ async voteMood(journeyId: string, userId: string, mood: JourneyMood): Promise<Jo
   }
 
   async update(id: string, dto: UpdateJourneyDto, userId: string): Promise<Journey> {
-    // Permission check: VIEWER không được phép cập nhật journey
     await this.permissionService.requireEditPermission(id, userId, 'Cập nhật thông tin hành trình');
 
     const journey = await this.accessService.getJourneyWithAccess(id, userId, 'EDIT');
@@ -299,7 +292,6 @@ async voteMood(journeyId: string, userId: string, mood: JourneyMood): Promise<Jo
   }
 
   async addStop(journeyId: string, dto: AddStopDto, userId: string): Promise<Journey> {
-    // Permission check: VIEWER không được phép add stop
     await this.permissionService.requireEditPermission(journeyId, userId, 'Thêm điểm dừng');
 
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
@@ -361,7 +353,7 @@ async voteMood(journeyId: string, userId: string, mood: JourneyMood): Promise<Jo
       if (!checkInDay || !checkOutDay) throw new NotFoundException('Ngày được chọn không hợp lệ');
 
       const checkInStartTime = dto.start_time || '14:00';
-      const checkInEndTime = JourneyUtils.addMinutesToTime(checkInStartTime, 45); // Cộng 45p
+      const checkInEndTime = JourneyUtils.addMinutesToTime(checkInStartTime, 45); 
       
       const checkInStop: JourneyStop = {
         _id: new ObjectId().toString(),
@@ -383,7 +375,7 @@ async voteMood(journeyId: string, userId: string, mood: JourneyMood): Promise<Jo
 
   
       const checkOutEndTime = dto.checkout_time;
-      const checkOutStartTime = JourneyUtils.addMinutesToTime(checkOutEndTime, -30); // Trừ 30p
+      const checkOutStartTime = JourneyUtils.addMinutesToTime(checkOutEndTime, -30); 
       
       const checkOutStop: JourneyStop = {
         _id: new ObjectId().toString(),
@@ -462,14 +454,11 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
       throw new BadRequestException('Hành trình đã kết thúc, không thể chỉnh sửa chi phí.');
     }
 
-    // Cập nhật thông tin cơ bản (MEMBER và HOST đều sửa được)
     if (dto.start_time !== undefined) stop.start_time = dto.start_time;
     if (dto.end_time !== undefined) stop.end_time = dto.end_time;
     if (dto.note !== undefined) stop.note = dto.note;
     if (dto.is_manual_cost !== undefined) stop.is_manual_cost = dto.is_manual_cost;
 
-    // --- LOGIC TÀI CHÍNH ---
-    // [THÊM MỚI] Chặn MEMBER cập nhật chi phí thực tế & chia bill
     const hasFinancialUpdate = 
       dto.actual_cost !== undefined || 
       dto.cost_type !== undefined || 
@@ -480,7 +469,6 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
       throw new ForbiddenException('Chỉ HOST (chủ chuyến đi) mới có quyền cập nhật chi phí thực tế và chia tiền.');
     }
 
-    // Các logic cập nhật dưới đây sẽ chỉ chạy lọt qua nếu user là HOST (khi có mang theo data tài chính)
     if (dto.estimated_cost !== undefined) {
       stop.estimated_cost = dto.estimated_cost;
     }
@@ -509,7 +497,7 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
             }
         }
     }
-    // Cập nhật người tham gia & bao phòng
+
     const currentMemberIds = journey.members?.map(m => m.user_id) || [];
     if (dto.is_prepaid !== undefined) {
       stop.is_prepaid = dto.is_prepaid;
@@ -535,7 +523,6 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
   }
 
   async moveStop(userId: string, dto: MoveStopDto): Promise<Journey> {
-    // Permission check: VIEWER không được phép di chuyển stop
     await this.permissionService.requireEditPermission(dto.journey_id, userId, 'Di chuyển điểm dừng');
 
     const journey = await this.accessService.getJourneyWithAccess(dto.journey_id, userId, 'EDIT');
@@ -557,7 +544,6 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
   }
 
   async removeStop(journeyId: string, dayNumber: number, stopId: string, userId: string) {
-    // Permission check: VIEWER không được phép xóa stop
     await this.permissionService.requireEditPermission(journeyId, userId, 'Xóa điểm dừng');
 
     const journey = await this.accessService.getJourneyWithAccess(journeyId, userId, 'EDIT');
@@ -601,10 +587,6 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
      await this.journeyRepo.save(journey);
   }
 
-  // =================================================================
-  // MEMBER MANAGEMENT
-  // =================================================================
-
   private async checkScheduleConflict(userId: string, newStart: Date, newEnd: Date, excludeJourneyId?: string): Promise<void> {
     const query: any = {
       $or: [{ owner_id: userId }, { "members.user_id": userId }],
@@ -642,8 +624,7 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
     };
 
     journey.members.push(newMember);
-    
-    // Tự động tạo mã mời mới (Random 6 ký tự viết hoa)
+
     const newInviteCode = this.generateInviteCode();
     journey.invite_code = newInviteCode;
     
@@ -795,10 +776,8 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
       const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
       if (!journey) throw new NotFoundException('Hành trình không tồn tại');
 
-      // 2. Định nghĩa kiểu cho mảng album để tránh lỗi 'never'
       const album: AlbumItem[] = [];
 
-      // Lấy ảnh check-in
       journey.days.forEach(day => {
         day.stops.forEach(stop => {
           if (stop.participant_checkins) {
@@ -817,11 +796,10 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
         });
       });
 
-      // 3. Lấy ảnh từ chat sử dụng chatMessageRepo đã được inject
       const chatMessages = await this.chatMessageRepo.find({
         where: { 
           journey_id: journeyId,
-          type: MessageType.IMAGE // Đảm bảo bạn sử dụng đúng Enum Type của ChatMessage
+          type: MessageType.IMAGE 
         }
       });
 
@@ -837,43 +815,27 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
       return album.sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
     }
 
-  // ==========================================
-  // HOST TRANSFER & PERMISSION MANAGEMENT
-  // ==========================================
-
-  /**
-   * HOST chuyển quyền cho một MEMBER khác
-   * Yêu cầu:
-   * - Chỉ HOST mới có thể chuyển (owner_id)
-   * - Người nhận phải là MEMBER hoặc HOST
-   * - Không thể chuyển cho VIEWER
-   */
   async transferHostTo(journeyId: string, newHostUserId: string, currentHostUserId: string): Promise<Journey> {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
 
-    // 1. Kiểm tra hiện tại là HOST
     if (journey.owner_id !== currentHostUserId) {
       throw new ForbiddenException('Chỉ HOST (chủ chuyến đi) mới có thể chuyển quyền');
     }
 
-    // 2. Kiểm tra user mới tồn tại và là member
     const newHostMember = journey.members?.find(m => m.user_id === newHostUserId);
     if (!newHostMember) {
       throw new NotFoundException('Người dùng không phải là thành viên của hành trình');
     }
 
-    // 3. Không thể chuyển cho VIEWER
     if (newHostMember.role === JourneyMemberRole.VIEWER) {
       throw new BadRequestException('Không thể chuyển quyền HOST cho VIEWER. Chỉ MEMBER hoặc những người không có role cụ thể mới có thể nhận.');
     }
 
-    // 4. Không thể chuyển cho chính mình
     if (newHostUserId === currentHostUserId) {
       throw new BadRequestException('Bạn đã là HOST');
     }
 
-    // 5. Chuyển quyền: Demote HOST cũ -> MEMBER, Promote MEMBER mới -> HOST
     const oldHostMember = journey.members.find(m => m.user_id === currentHostUserId);
     if (oldHostMember) {
       oldHostMember.role = JourneyMemberRole.MEMBER;
@@ -884,7 +846,6 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
 
     await this.journeyRepo.save(journey);
 
-    // 6. Gửi notification
     await this.notificationsService.createAndSend({
       recipient_id: newHostUserId,
       sender_id: currentHostUserId,
@@ -894,7 +855,6 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
       metadata: { journey_id: journey._id.toString() },
     });
 
-    // Thông báo cho các member khác
     await this.notifyMembers(
       journey,
       currentHostUserId,
@@ -904,10 +864,6 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
     return journey;
   }
 
-  /**
-   * Lấy danh sách các member có thể nhận quyền HOST
-   * (Dùng khi HOST muốn chuyển quyền, show danh sách candidates)
-   */
   async getHostCandidates(journeyId: string, currentHostUserId: string): Promise<JourneyMember[]> {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
@@ -916,16 +872,12 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
       throw new ForbiddenException('Chỉ HOST mới có thể xem danh sách ứng cử viên');
     }
 
-    // Lọc: MEMBER hoặc HOST (không VIEWER), loại bỏ HOST hiện tại
     return (journey.members || []).filter(m =>
       m.user_id !== currentHostUserId &&
       (m.role === JourneyMemberRole.MEMBER || m.role === JourneyMemberRole.HOST)
     );
   }
 
-  /**
-   * Thay đổi role của một member (chỉ HOST)
-   */
   async changeMemberRole(
     journeyId: string,
     targetMemberId: string,
@@ -935,17 +887,14 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
 
-    // Chỉ HOST mới có thể thay đổi role
     if (journey.owner_id !== currentHostUserId) {
       throw new ForbiddenException('Chỉ HOST mới có quyền thay đổi role của thành viên');
     }
 
-    // Không thể thay đổi role của chính mình
     if (targetMemberId === currentHostUserId) {
       throw new BadRequestException('Không thể thay đổi role của chính mình. Hãy chuyển quyền HOST trước.');
     }
 
-    // Tìm member
     const memberIdx = journey.members?.findIndex(m => m.user_id === targetMemberId);
     if (memberIdx === undefined || memberIdx === -1) {
       throw new NotFoundException('Thành viên không tồn tại');
@@ -956,7 +905,6 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
 
     await this.journeyRepo.save(journey);
 
-    // Notify
     const roleText = {
       [JourneyMemberRole.HOST]: 'HOST',
       [JourneyMemberRole.MEMBER]: 'MEMBER',
@@ -1008,7 +956,6 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
       journey.extra_expenses = [];
     }
 
-    // Đẩy khoản chi mới vào mảng
     journey.extra_expenses.push({
       id: new ObjectId().toString(),
       title: dto.title,
@@ -1017,11 +964,9 @@ await this.permissionService.requireEditPermission(journeyId, userId, 'Cập nh�
       date: new Date()
     });
 
-    // Tính lại quỹ và save
     await this.budgetService.syncSmartBudget(journey);
     await this.journeyRepo.save(journey);
 
-    // Gửi noti
     this.notifyMembers(journey, userId, `đã thêm khoản chi "${dto.title}" (${dto.amount.toLocaleString()}đ)`);
 
     return journey;

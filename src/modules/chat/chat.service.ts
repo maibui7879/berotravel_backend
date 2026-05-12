@@ -63,7 +63,6 @@ export class ChatService {
     let roomId = dto.room_id;
     let roomType = ConversationType.DIRECT;
 
-    // A. Nếu nhắn vào chuyến đi (Journey)
     if (dto.journey_id) {
       const journey = await this.journeysService.findOne(dto.journey_id);
       if (!journey) throw new BadRequestException('Không tìm thấy chuyến đi');
@@ -102,19 +101,16 @@ export class ChatService {
       roomId = String(room._id);
       roomType = ConversationType.JOURNEY;
     }
-    // B. Nếu nhắn 1-1
     else if (dto.receiver_id) {
       const room = await this.getOrCreateDirectRoom(userId, dto.receiver_id);
       roomId = String(room._id);
     }
-    // C. Hoặc đã biết roomId trước
     else if (!roomId) {
       throw new BadRequestException('Phải cung cấp journey_id, receiver_id hoặc room_id');
     }
 
     const sender = await this.userRepo.findOne({ where: { _id: new ObjectId(userId) } });
 
-    // Tạo tin nhắn mới
     const message = this.chatRepo.create({
       room_id: roomId,
       room_type: roomType,
@@ -134,13 +130,12 @@ export class ChatService {
         recipient_id: dto.receiver_id,
         sender_id: userId,
         sender_avatar: sender?.avatar,
-        type: NotificationType.NEW_MESSAGE, // Enum có sẵn trong notification.entity.ts
+        type: NotificationType.NEW_MESSAGE, 
         title: `Tin nhắn mới từ ${sender?.fullName}`,
         message: dto.content || 'Bạn có một hình ảnh mới',
         metadata: { room_id: roomId, type: 'DIRECT_CHAT' }
       });
     }
-    // Cập nhật last_message của Conversation
     await this.conversationRepo.update(new ObjectId(roomId), {
       last_message: dto.content || `[${dto.type}]`,
       updated_at: new Date(),
@@ -149,14 +144,11 @@ export class ChatService {
     return savedMsg;
   }
 
-  // KIỂM TRA QUYỀN TRUY CẬP PHÒNG
 public async checkUserInRoom(roomId: string, userId: string) {
     const room = await this.conversationRepo.findOne({ where: { _id: new ObjectId(roomId) } });
     if (!room) throw new BadRequestException('Phòng chat không tồn tại');
 
-    // [VÁ LỖI ĐỒNG BỘ MEMBER]: Kiểm tra với phòng chat Hành trình
     if (room.type === ConversationType.JOURNEY && room.journey_id) {
-       // Lấy thông tin chuyến đi mới nhất
        const journey = await this.journeysService.findOne(room.journey_id).catch(() => null);
        if (!journey) throw new ForbiddenException('Chuyến đi không tồn tại');
        

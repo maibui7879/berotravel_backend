@@ -49,8 +49,7 @@ export class JourneyTrackingService {
     }
 
     journey.status = JourneyStatus.ON_GOING;
-    
-    // Đồng bộ ngân sách theo số người đã chốt
+
     await this.budgetService.syncSmartBudget(journey);
     
     return await this.journeyRepo.save(journey);
@@ -75,12 +74,10 @@ async checkInStop(
 
     if (!stop.participant_checkins) stop.participant_checkins = [];
 
-    // 1. Lưu logic ĐIỂM DANH (Check-in)
     let userCheckIn = stop.participant_checkins.find(c => c.user_id === userId);
     if (userCheckIn) {
         userCheckIn.checked_in_at = new Date();
         userCheckIn.check_in_image = dto.check_in_image;
-        // KHÔNG LƯU actual_cost ở đây nữa
     } else {
         stop.participant_checkins.push({
           user_id: userId,
@@ -89,9 +86,6 @@ async checkInStop(
         });
     }
 
-    // 2. Lưu logic TÀI CHÍNH (Tiền thực tế, người trả, tỷ lệ chia)
-
-    // 3. Xử lý Trạng thái và Thông báo
     const targetParticipants = stop.participant_ids && stop.participant_ids.length > 0 
       ? stop.participant_ids 
       : journey.members.map(m => m.user_id);
@@ -123,9 +117,6 @@ async checkInStop(
         return await this.journeyRepo.save(journey);
   }
 
-  // =================================================================
-  // 3. RESUME JOURNEY (Release Old Booking + Partial Shift)
-  // =================================================================
   async resumeJourney(journeyId: string, userId: string, dto: ResumeJourneyDto): Promise<Journey> {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
@@ -148,14 +139,12 @@ async checkInStop(
         const diffTime = newStartForPending.getTime() - originalPendingDate.getTime();
 
         if (diffTime !== 0) {
-            // [LOGIC RELEASE] Hoàn trả slot cho các ngày cũ trước khi dời lịch
             for (let i = firstPendingDayIndex; i < journey.days.length; i++) {
                 const day = journey.days[i];
                 const oldDateStr = new Date(day.date).toISOString().split('T')[0];
 
                 for (const stop of day.stops) {
                     if (stop.status === StopStatus.PENDING) {
-                        // Release ngày cũ
                         await this.bookingsService.releaseBookingSlot(
                             stop.place_id, 
                             oldDateStr, 
@@ -165,7 +154,6 @@ async checkInStop(
                 }
             }
 
-            // Dời lịch
             for (let i = firstPendingDayIndex; i < journey.days.length; i++) {
                 const day = journey.days[i];
                 const oldDate = new Date(day.date);
@@ -188,9 +176,6 @@ async checkInStop(
     return await this.journeyRepo.save(journey);
   }
 
-  // =================================================================
-  // 5. SKIP STOP (Release Booking Slot)
-  // =================================================================
   async skipStop(journeyId: string, dayId: string, stopId: string, userId: string): Promise<Journey> {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
@@ -203,7 +188,6 @@ async checkInStop(
     if (stop.actual_cost && stop.actual_cost > 0) {
         throw new BadRequestException('Không thể bỏ qua (Skip) địa điểm đã phát sinh chi phí thực tế.');
     }
-    // [LOGIC RELEASE] Nếu chưa check-in -> Trả slot
     if (stop.status === StopStatus.PENDING) {
          const dateStr = new Date(day.date).toISOString().split('T')[0];
          await this.bookingsService.releaseBookingSlot(
@@ -222,19 +206,14 @@ async checkInStop(
     return await this.journeyRepo.save(journey);
   }
 
-  // =================================================================
-  // 6. CANCEL JOURNEY (Release All Pending Slots)
-  // =================================================================
   async cancelJourney(journeyId: string, userId: string): Promise<Journey> {
     const journey = await this.journeyRepo.findOne({ where: { _id: new ObjectId(journeyId) } });
     if (!journey) throw new NotFoundException('Hành trình không tồn tại');
     if (journey.owner_id !== userId) throw new BadRequestException('Chỉ chủ sở hữu mới được hủy');
 
-    // Duyệt qua tất cả các stop chưa đi để hoàn trả kho
     for (const day of journey.days) {
         const dateStr = new Date(day.date).toISOString().split('T')[0];
         for (const stop of day.stops) {
-            // Chỉ hủy những cái chưa check-in/skipped
             if (stop.status === StopStatus.PENDING) {
                 await this.bookingsService.releaseBookingSlot(
                     stop.place_id,
@@ -257,12 +236,10 @@ async checkInStop(
   const stop = day?.stops.find(s => s._id === stopId);
   if (!stop) throw new NotFoundException('Stop không tồn tại');
 
-  // Lấy danh sách ID những người cần tham gia (mặc định là tất cả thành viên nếu không chỉ định)
   const participants = stop.participant_ids && stop.participant_ids.length > 0 
     ? stop.participant_ids 
     : journey.members.map(m => m.user_id);
 
-  // Lấy danh sách chi tiết những người đã check-in
   const checkedInUsers = stop.participant_checkins || [];
 
   return {
@@ -272,14 +249,14 @@ async checkInStop(
     progress_percentage: participants.length > 0 
       ? Math.round((checkedInUsers.length / participants.length) * 100) 
       : 0,
-    // Trả về danh sách chi tiết để hiển thị UI (avatar, tên, giờ check-in)
+
     check_in_list: checkedInUsers.map(checkin => ({
       user_id: checkin.user_id,
       checked_in_at: checkin.checked_in_at,
       image: checkin.check_in_image,
       is_completed: true
     })),
-    // Danh sách những người chưa check-in
+
     pending_list: participants.filter(id => !checkedInUsers.some(c => c.user_id === id))
   };
 }

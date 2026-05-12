@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 
-// Entities
 import { Journey, JourneyDay } from '../entities/journey.entity';
 import { InventoryUnit } from '../../bookings/entities/inventory-unit.entity';
 import { Availability as AvailabilityEntity } from '../../bookings/entities/availability.entity';
@@ -11,8 +10,8 @@ import { Place } from '../../places/entities/place.entity';
 
 export const COST_RATES = {
   transportation: {
-    DRIVING: 3000,          // VND/km (Xăng xe - Chia sẻ)
-    PUBLIC_TRANSPORT: 1000, // VND/km (Vé xe/tàu - Mỗi người 1 vé)
+    DRIVING: 3000,          
+    PUBLIC_TRANSPORT: 1000, 
     WALKING: 0,
   },
   dining: {
@@ -41,7 +40,7 @@ export interface AccommodationCost {
   nights: number;
   nightly_rate: number;
   subtotal: number;
-  is_estimated?: boolean; // True if using system default rate instead of actual unit pricing
+  is_estimated?: boolean; 
 }
 
 export interface DiningCost {
@@ -75,9 +74,9 @@ export interface CostSummary {
   total_dining: number;
   total_activities: number;
   total_transportation: number;
-  subtotal: number; // Total before contingency
-  contingency_buffer: number; // 10% contingency buffer
-  grand_total: number; // Final total including contingency
+  subtotal: number; 
+  contingency_buffer: number; 
+  grand_total: number; 
   cost_per_person: number;
   currency: string;
 }
@@ -89,10 +88,6 @@ export interface CostEstimationBreakdown {
   transportation: TransportationCost[];
   summary: CostSummary;
 }
-
-// ============================================================================
-// SERVICE IMPLEMENTATION
-// ============================================================================
 
 @Injectable()
 export class CostEstimationService {
@@ -113,7 +108,6 @@ export class CostEstimationService {
 
     const actualMemberCount = memberCount || journey.members?.length || 1;
 
-    // --- 1. OPTIMIZATION: BULK FETCH PLACES ---
     const allPlaceIds = journey.days
       .flatMap(d => d.stops.map(s => s.place_id))
       .filter(id => ObjectId.isValid(id))
@@ -122,21 +116,17 @@ export class CostEstimationService {
     const places = await this.placeRepo.find({ where: { _id: { $in: allPlaceIds } } as any });
     const placeMap = new Map(places.map(p => [p._id.toString(), p]));
 
-    // --- INIT LISTS ---
     const accommodationCosts: AccommodationCost[] = [];
     const diningCosts: DiningCost[] = [];
     const activityCosts: ActivityCost[] = [];
     const transportationCosts: TransportationCost[] = [];
 
-    // Mảng gom các khách sạn để tính toán số đêm cho chuẩn
     const hotelStops: { place_id: string; date: Date; is_prepaid: boolean; explicit_checkout_date?: Date }[] = [];
 
-    // --- MAIN LOOP ---
     for (let i = 0; i < journey.days.length; i++) {
       const day = journey.days[i];
       const dayNum = i + 1;
 
-      // A. Calculate Dining (Per Day)
       const dayDining = this.calculateDiningCost(day, dayNum, placeMap);
       if (dayDining.subtotal > 0) diningCosts.push(dayDining);
 
@@ -149,17 +139,12 @@ export class CostEstimationService {
         const isAccommodation = ['HOTEL', 'HOMESTAY'].includes(place.category);
         const isDiningPlace = ['RESTAURANT', 'CAFE', 'STREET_FOOD'].includes(place.category);
 
-        // B. Gom danh sách Khách sạn để xử lý sau (chống duplicate check-in)
-        // [ĐÃ VÁ LỖI]: Không đẩy vào mảng tiền đêm nếu là thuê day-use tự nhập giá
         if (includeAccommodation && isAccommodation && !stop.is_manual_cost && !stop.is_prepaid) {
             const lastHotel = hotelStops.length > 0 ? hotelStops[hotelStops.length - 1] : null;
 
-          // Nếu Stop này trùng với Khách sạn ngay trước đó (User add lại vào ngày hôm sau để checkout)
           if (lastHotel && lastHotel.place_id === stop.place_id) {
-            // Không tạo lần Check-in mới, mà lấy ngày này làm mốc Check-out cho lần trước
             lastHotel.explicit_checkout_date = day.date;
           } else {
-            // Khách sạn mới hoàn toàn -> Tạo lần Check-in mới
             hotelStops.push({
               place_id: stop.place_id,
               date: day.date,
@@ -168,9 +153,7 @@ export class CostEstimationService {
           }
         }
 
-        // C. Calculate Activities
         if (!stop.is_prepaid) {
-          // Tính phí hoạt động NẾU không phải chỗ ngủ/chỗ ăn, HOẶC nếu user cố tình tự nhập giá (Day-use / Vé dịch vụ)
           if (!(isDiningPlace || isAccommodation) || stop.is_manual_cost) {
             let finalCost = 0;
 
@@ -198,7 +181,6 @@ export class CostEstimationService {
           }
         }
 
-        // D. Calculate Transportation (Luôn tính phí di chuyển, dù điểm đó có Prepaid hay không)
         if (stop.transit_from_previous) {
           const mode = stop.transit_from_previous.mode;
           const dist = stop.transit_from_previous.distance_km;
@@ -221,31 +203,25 @@ export class CostEstimationService {
       }
     }
 
-    // --- XỬ LÝ SỐ ĐÊM KHÁCH SẠN (HOTEL NIGHTS) ---
     for (let k = 0; k < hotelStops.length; k++) {
         const currentHotel = hotelStops[k];
-        
-        // Nếu đã thanh toán trước (Bao phòng) thì bỏ qua không tính vào bill chung
+
         if (currentHotel.is_prepaid) continue;
 
         const checkIn = new Date(currentHotel.date);
         checkIn.setHours(0, 0, 0, 0);
 
-        // Ưu tiên 1: Lấy ngày Check-out do người dùng tự ghim (nếu có)
-        // Ưu tiên 2: Lấy ngày kết thúc hành trình
         let checkOut = currentHotel.explicit_checkout_date 
                        ? new Date(currentHotel.explicit_checkout_date) 
                        : new Date(journey.end_date);
         checkOut.setHours(0, 0, 0, 0);
 
-        // Ưu tiên 3: Nếu không có ngày tự ghim, mà có khách sạn mới tiếp theo thì bị đè ngày check-out
         if (!currentHotel.explicit_checkout_date && k + 1 < hotelStops.length) {
             const nextHotelDate = new Date(hotelStops[k + 1].date);
             nextHotelDate.setHours(0, 0, 0, 0);
             checkOut = nextHotelDate;
         }
 
-        // Đảm bảo thuê tối thiểu 1 đêm (nếu user chèn 2 khách sạn trong cùng 1 ngày do nhầm lẫn)
         if (checkOut.getTime() <= checkIn.getTime()) {
             checkOut = new Date(checkIn);
             checkOut.setDate(checkOut.getDate() + 1);
@@ -255,7 +231,6 @@ export class CostEstimationService {
         accommodationCosts.push(accCost);
     }
 
-    // --- SUMMARY CALCULATION ---
     const summary = this.calculateSummary(
       accommodationCosts,
       diningCosts,
@@ -273,9 +248,6 @@ export class CostEstimationService {
     };
   }
 
-  // =================================================================
-  // HELPERS 
-  // =================================================================
   private async calculateAccommodationCost(
     placeId: string,
     checkIn: Date,
@@ -285,7 +257,6 @@ export class CostEstimationService {
 
     const nights = Math.max(1, Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)));
 
-    // If no InventoryUnit found, use system default rate
     if (!unit) {
       const defaultRate = COST_RATES.accommodation.default;
       return {
@@ -300,7 +271,6 @@ export class CostEstimationService {
       };
     }
 
-    // Calculate price using actual unit data
     const avails = await this.availRepo.find({
       where: { unit_id: unit._id.toString(), date: { $gte: checkIn, $lt: checkOut } }
     });
@@ -343,8 +313,7 @@ export class CostEstimationService {
             else if (hour >= 17) mealType = 'dinner';
 
             let baseCost = COST_RATES.dining[cat]?.[mealType] || 100000;
-            
-            // Apply price level multiplier (1-4 scale)
+
             const priceLevel = place.priceLevel || 1;
             const multiplier = this.getPriceLevelMultiplier(priceLevel);
             estimate = place.estimated_cost_vnd ? COST_RATES.dining[cat]?.[mealType] : Math.round(baseCost * multiplier);
@@ -379,11 +348,9 @@ export class CostEstimationService {
     const baseAct = act.reduce((s, i) => s + i.estimated_cost, 0);
     const totalAct = baseAct * members;
     const totalTrans = trans.reduce((s, i) => s + i.estimated_cost, 0);
-    
-    // Calculate subtotal before contingency
+
     const subtotal = totalAcc + totalDining + totalAct + totalTrans;
-    
-    // Add 10% contingency buffer
+
     const contingencyBuffer = Math.round(subtotal * 0.1);
     const grandTotal = subtotal + contingencyBuffer;
 
@@ -400,10 +367,6 @@ export class CostEstimationService {
     };
   }
 
-  /**
-   * Get price level multiplier (1-4 scale)
-   * 1 = Budget (1.0x), 2 = Mid-range (1.2x), 3 = Upscale (1.5x), 4 = Luxury (2.0x)
-   */
   private getPriceLevelMultiplier(priceLevel: number): number {
     const multipliers: { [key: number]: number } = {
       1: 1.0,    // Budget

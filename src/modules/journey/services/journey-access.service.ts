@@ -29,31 +29,27 @@ export class JourneyAccessService {
     const isMember = journey.members?.some(m => m.user_id === userId) || false;
 
     if (mode === 'EDIT') {
-      // MODE EDIT: Kiểm tra HOST/MEMBER
       if (!isOwner && !isMember) {
         throw new ForbiddenException('Bạn không có quyền chỉnh sửa hành trình này');
       }
 
-      // Nếu là VIEWER (member nhưng role=VIEWER) -> không được phép chỉnh sửa bất cứ gì
       if (userRole === JourneyMemberRole.VIEWER) {
         throw new ForbiddenException('VIEWER không có quyền chỉnh sửa hành trình. Chỉ HOST và MEMBER mới có thể.');
       }
     } else {
-      // MODE VIEW: Kiểm tra visibility
       if (!isOwner && !isMember) {
         if (journey.visibility === JourneyVisibility.PUBLIC) {
-          return journey; // Cho phép Guest xem công khai
+          return journey; 
         }
 
         if (journey.visibility === JourneyVisibility.FRIENDS) {
-          // Kiểm tra xem userId hiện tại có phải là bạn của owner_id không
           const myFriends = await this.friendsService.getMyFriends(journey.owner_id);
           const isFriend = myFriends.some(f => f._id.toString() === userId);
 
           if (!isFriend) {
             throw new ForbiddenException('Chỉ bạn bè của chủ hành trình mới có thể xem');
           }
-          return journey; // Là bạn bè -> Được xem view-only
+          return journey;
         }
 
         if (journey.visibility === JourneyVisibility.PRIVATE) {

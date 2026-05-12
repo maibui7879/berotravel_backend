@@ -10,11 +10,9 @@ import { MongoRepository } from 'typeorm';
 import { ObjectId } from 'mongodb';
 import * as bcrypt from 'bcrypt';
 
-// Entities & Enums
 import { User, AuthProvider, SocialProfile } from '../users/entities/user.entity';
 import { Role } from '../../common/constants';
 
-// DTOs
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -26,8 +24,6 @@ export class AuthService {
     private jwtService: JwtService,
     private config: ConfigService,
   ) {}
-
-  // ==================== AUTH LOGIC ====================
 
   async signUp(dto: CreateUserDto) {
     const email = dto.email.toLowerCase();
@@ -70,9 +66,7 @@ export class AuthService {
     return this.generateAuthResponse(user, false);
   }
 
-  // ===== THÊM LOGIC XỬ LÝ GOOGLE LOGIN =====
   async googleLogin(googleUser: any) {
-    // Xử lý lấy email từ emails array hoặc email field
     const email = (googleUser?.emails?.[0]?.value || googleUser?.email || '').toLowerCase();
     
     if (!email) {
@@ -82,14 +76,11 @@ export class AuthService {
     let user = await this.userRepository.findOneBy({ email });
     let isNewUser = false;
 
-    // Lấy avatar từ photos array
     const avatar = googleUser?.photos?.[0]?.value || googleUser?.picture;
     
-    // Lấy Google ID
     const googleId = googleUser?.id || googleUser?.providerId;
 
     if (!user) {
-      // User chưa tồn tại -> Tạo mới (Đăng ký bằng Google)
       isNewUser = true;
       const fullName = googleUser?.displayName || 
                        `${googleUser?.name?.givenName || ''} ${googleUser?.name?.familyName || ''}`.trim() ||
@@ -110,18 +101,15 @@ export class AuthService {
       
       user = await this.userRepository.save(newUser as unknown as User);
     } else {
-      // Nếu user đã tồn tại nhưng chưa có Google AuthProvider -> Cập nhật thêm Provider
       if (!user.authProviders?.includes(AuthProvider.GOOGLE)) {
         user.authProviders = [...(user.authProviders || []), AuthProvider.GOOGLE];
-        
-        // Khởi tạo socialProfile nếu chưa có
+
         if (!user.socialProfile) {
           user.socialProfile = { providerId: googleId };
         } else {
           user.socialProfile.providerId = googleId;
         }
-        
-        // Cập nhật avatar nếu User chưa có ảnh đại diện
+
         if (!user.avatar && avatar) {
           user.avatar = avatar;
         }
@@ -130,11 +118,10 @@ export class AuthService {
       }
     }
 
-    // Sinh token và trả về Frontend
     return this.generateAuthResponse(user, isNewUser);
   }
 
-  // ==================== TOKEN MGMT ====================
+
 
   async logout(userId: string) {
     await this.userRepository.update(new ObjectId(userId), { hashedRt: null });
@@ -153,8 +140,6 @@ export class AuthService {
     
     return tokens;
   }
-
-  // ==================== HELPER METHODS ====================
 
   async getTokens(userId: string, email: string, role: string) {
     const [at, rt] = await Promise.all([

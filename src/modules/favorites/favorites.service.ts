@@ -9,7 +9,6 @@ import { Place } from '../places/entities/place.entity';
 import { Journey } from '../journey/entities/journey.entity';
 import { User } from '../users/entities/user.entity';
 import { FriendsService } from '../friend/friend.service';
-// [NEW] Import Service và Constant để tính điểm
 import { UserProfileService } from '../users/services/user-profile.service';
 import { UserActionType } from '../../common/constants';
 
@@ -21,7 +20,6 @@ export class FavoritesService {
     @InjectRepository(Journey) private readonly journeyRepo: MongoRepository<Journey>,
     
     private readonly friendsService: FriendsService,
-    // [NEW] Inject UserProfileService
     private readonly userProfileService: UserProfileService,
   ) {}
 
@@ -52,7 +50,6 @@ export class FavoritesService {
         }
         return { status: 'UNLIKED', message: 'Đã bỏ yêu thích', count: -1 }; 
     } else {
-        // === LIKE ===
         const fav = this.favRepo.create({
             user_id: userId,
             target_id: dto.target_id,
@@ -61,9 +58,7 @@ export class FavoritesService {
         await this.favRepo.save(fav);
         await targetRepo.updateOne({ _id: targetIdObj }, { $inc: { favorites_count: 1 } });
 
-        // [NEW LOGIC] Cộng điểm Personalization
         if (dto.type === FavoriteType.PLACE) {
-            // Chạy ngầm (không await) để không làm chậm response
             this.userProfileService.scoreAction(userId, dto.target_id, UserActionType.ADD_TO_FAVORITE);
         }
 

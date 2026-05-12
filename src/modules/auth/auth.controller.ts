@@ -24,7 +24,6 @@ import { AuthService } from './auth.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 
-// Decorators & Guards
 import { Public } from '../../common/decorators/public.decorator';
 import { GetCurrentUser } from '../../common/decorators/get-current-user.decorator';
 import { RtGuard } from '../../common/guards/rt.guard';
@@ -34,8 +33,6 @@ import { GoogleAuthGuard } from './guards/google.guard';
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
-
-  // ==================== LOCAL AUTH ====================
 
   @Public()
   @Post('register')
@@ -55,14 +52,11 @@ export class AuthController {
     return this.authService.signIn(dto);
   }
 
-  // ==================== GOOGLE SOCIAL AUTH ====================
-
   @Public()
   @Get('google')
   @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Bắt đầu luồng đăng nhập Google (Frontend chuyển hướng user tới đây)' })
   googleAuth() {
-    // Luồng sẽ do passport-google-oauth20 tự động xử lý
   }
 
   @Public()
@@ -70,11 +64,8 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Google Callback (Google trả data về đây)' })
   async googleAuthRedirect(@Req() req) {
-    // Trả về thẳng object chứa tokens thay vì redirect
     return await this.authService.googleLogin(req.user); 
   }
-
-  // ==================== TOKEN MGMT ====================
 
   @Post('logout')
   @ApiBearerAuth() 
@@ -91,7 +82,6 @@ export class AuthController {
     @Query('access_token') accessToken: string,
     @Query('refresh_token') refreshToken: string,
   ) {
-    // Trả về một object JSON để bạn có thể nhìn thấy token trên trình duyệt
     return {
       message: 'Đăng nhập thành công!',
       data: {

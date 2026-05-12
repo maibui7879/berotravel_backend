@@ -47,25 +47,18 @@ export class PlacesService {
     private readonly userProfileService: UserProfileService,
   ) {}
 
-  // ==========================================
-  // 1. CREATE LOGIC (CẬP NHẬT TÁCH BIỆT LUỒNG)
-  // ==========================================
   async create(dto: CreatePlaceDto, user: any) {
     const { location, is_owner, ...rest } = dto;
 
     let isPartner = false;
     let ownerId = null;
 
-    // QUY TẮC RẼ NHÁNH:
-    // - Nếu là Merchant và claim chủ sở hữu (is_owner: true) -> is_partner: true
-    // - Nếu là User hoặc Merchant không claim -> is_partner: false
     if (user.role === Role.MERCHANT && is_owner === true) {
       isPartner = true;
       ownerId = user.sub;
     } else {
       isPartner = false;
       ownerId = null;
-      // Cảnh báo nếu User cố tình claim owner
       if (user.role === Role.USER && is_owner === true) {
         this.logger.warn(`User ${user.sub} attempted to claim ownership without MERCHANT role.`);
       }
@@ -86,7 +79,7 @@ export class PlacesService {
         ownerId: ownerId,
         createdBy: user.sub,
         estimated_cost_vnd: dto.estimated_cost_vnd || 0,
-        status: PlaceStatus.PENDING, // Mọi địa điểm mới đều chờ Admin duyệt
+        status: PlaceStatus.PENDING, 
       });
 
       const savedPlace = await this.placeRepo.save(place);
@@ -103,9 +96,6 @@ export class PlacesService {
     }
   }
 
-  // ==========================================
-  // 2. READ LOGIC (SEARCH ENGINE)
-  // ==========================================
 async findAll(query: SearchPlaceDto, userId?: string) {
     const {
       name,
@@ -118,7 +108,7 @@ async findAll(query: SearchPlaceDto, userId?: string) {
       radius,
       sortBy,
       sortOrder,
-      maxCrowd,   // Bổ sung maxCrowd từ SearchPlaceDto
+      maxCrowd,   
     } = query;
 
     if (userId && name) {
@@ -131,7 +121,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
     const order = sortOrder === SortOrder.DESC ? -1 : 1;
     const pipeline: any[] = [];
 
-    // 1. GeoNear (Phải đứng đầu pipeline nếu có tọa độ)
     if (lat !== undefined && lng !== undefined) {
       pipeline.push({
         $geoNear: {
@@ -150,7 +139,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
       }
     }
 
-    // 2. Filter Logic (Name & Tags)
     if (name) {
       const keywordRegex = new RegExp(name, 'i');
       pipeline.push({
@@ -174,8 +162,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
       pipeline.push({ $match: { category } });
     }
 
-    // --- MỚI: Logic lọc theo Crowd Level ---
-    // Tìm các địa điểm có độ đông đúc nhỏ hơn hoặc bằng mức yêu cầu
     if (maxCrowd !== undefined) {
       pipeline.push({
         $match: { 
@@ -184,15 +170,12 @@ async findAll(query: SearchPlaceDto, userId?: string) {
       });
     }
 
-    // 3. Sorting
-    // Logic này tự động xử lý được sortBy: 'crowdLevel' nếu SortBy enum đã có field này
     if (sortField === SortBy.DISTANCE && lat !== undefined) {
       pipeline.push({ $sort: { distance: order } });
     } else {
       pipeline.push({ $sort: { [sortField]: order } });
     }
 
-    // 4. Pagination
     pipeline.push({
       $facet: {
         data: [{ $skip: skip }, { $limit: take }],
@@ -215,7 +198,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
         },
       };
     } catch (error) {
-      // Log lỗi chi tiết để debug dễ hơn
       console.error('Aggregate Error:', error);
       throw new InternalServerErrorException('Lỗi database khi tìm kiếm địa điểm');
     }
@@ -228,7 +210,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
     });
   }
 
-  // 2. Từ chối yêu cầu chỉnh sửa
   async rejectEditRequest(requestId: string, reason: string, adminUser: CurrentUser) {
     if (adminUser.role !== Role.ADMIN) {
       throw new ForbiddenException('Chỉ Admin mới được thực hiện thao tác này');
@@ -260,16 +241,12 @@ async findAll(query: SearchPlaceDto, userId?: string) {
     return place;
   }
 
-  // ==========================================
-  // 3. UPDATE LOGIC
-  // ==========================================
   async update(id: string, dto: any, user: CurrentUser) {
     const place = await this.findOne(id);
 
     const isOwner = place.ownerId === user.sub;
     const isAdmin = user.role === Role.ADMIN;
 
-    // Chỉ chủ sở hữu hoặc Admin mới được cập nhật trực tiếp
     if (isOwner || isAdmin) {
       const updateData = { ...dto };
       if (dto.location) {
@@ -283,7 +260,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
       return await this.findOne(id);
     }
 
-    // User khác cập nhật -> Tạo yêu cầu chỉnh sửa
     delete dto.status;
     const request = this.editRequestRepo.create({
       place_id: id,
@@ -299,9 +275,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
     };
   }
 
-  // ==========================================
-  // 4. ADMIN APPROVAL LOGIC
-  // ==========================================
 
   async getPendingPlaces() {
     return await this.placeRepo.find({
@@ -382,7 +355,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
     }
   }
 
-  // Helper để cập nhật hàng loạt is_partner cho dữ liệu cũ (Migration)
   async migratePartnerFlag() {
     const result = await this.placeRepo.updateMany(
       { is_partner: { $exists: false } } as any,
@@ -391,11 +363,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
     return { updatedCount: result.modifiedCount };
   }
 
-  // ==========================================
-  // 5. CLAIM PLACE OWNERSHIP LOGIC
-  // ==========================================
-
-  // 1. Merchant gửi yêu cầu claim
   async requestClaim(placeId: string, proofImages: string[], user: any) {
     if (user.role !== Role.MERCHANT) {
       throw new ForbiddenException('Chỉ tài khoản Merchant mới có thể xác nhận quyền sở hữu');
@@ -406,7 +373,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
       throw new BadRequestException('Địa điểm này đã có chủ sở hữu');
     }
 
-    // Kiểm tra xem đã có yêu cầu nào đang chờ duyệt chưa
     const existingRequest = await this.claimRequestRepo.findOne({
       where: {
         place_id: placeId,
@@ -427,7 +393,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
     return await this.claimRequestRepo.save(claim);
   }
 
-  // 2. Admin duyệt yêu cầu claim
   async approveClaim(claimId: string, adminUser: CurrentUser) {
     if (adminUser.role !== Role.ADMIN) {
       throw new ForbiddenException('Chỉ Admin mới có quyền duyệt');
@@ -440,7 +405,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
       throw new NotFoundException('Yêu cầu không hợp lệ hoặc đã được xử lý');
     }
 
-    // Cập nhật thông tin chủ sở hữu cho địa điểm
     await this.placeRepo.update(new ObjectId(claim.place_id), {
       ownerId: claim.user_id,
       is_partner: true,
@@ -450,7 +414,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
     return await this.claimRequestRepo.save(claim);
   }
 
-  // 3. Admin từ chối yêu cầu claim
   async rejectClaim(claimId: string, reason: string, adminUser: CurrentUser) {
     if (adminUser.role !== Role.ADMIN) {
       throw new ForbiddenException('Chỉ Admin mới có quyền thực hiện');
@@ -468,7 +431,6 @@ async findAll(query: SearchPlaceDto, userId?: string) {
     return await this.claimRequestRepo.save(claim);
   }
 
-  // 4. Lấy danh sách yêu cầu claim chờ duyệt
   async getPendingClaimRequests() {
     return await this.claimRequestRepo.find({
       where: { status: ClaimRequestStatus.PENDING },

@@ -11,25 +11,21 @@ export class NotificationsService {
   constructor(
     @InjectRepository(Notification)
     private readonly notifRepo: MongoRepository<Notification>,
-    private readonly notificationsGateway: NotificationsGateway, // Inject Gateway
+    private readonly notificationsGateway: NotificationsGateway, 
   ) {}
 
-  // 1. TẠO & GỬI THÔNG BÁO (Dùng nội bộ cho các Service khác gọi)
   async createAndSend(dto: CreateNotificationDto) {
-    // A. Lưu vào DB
     const notif = this.notifRepo.create({
       ...dto,
       is_read: false,
     });
     const savedNotif = await this.notifRepo.save(notif);
 
-    // B. Bắn Socket Realtime
     this.notificationsGateway.sendToUser(dto.recipient_id, savedNotif);
 
     return savedNotif;
   }
 
-  // 2. LẤY DANH SÁCH THÔNG BÁO CỦA USER
   async getUserNotifications(userId: string, limit = 20) {
     return await this.notifRepo.find({
       where: { recipient_id: userId },
@@ -38,19 +34,15 @@ export class NotificationsService {
     } as any);
   }
 
-  // 3. ĐÁNH DẤU ĐÃ ĐỌC
 async markAsRead(id: string, userId: string) {
-    // Bổ sung: Kiểm tra tính hợp lệ của id trước khi ép kiểu
     if (!ObjectId.isValid(id)) {
       throw new BadRequestException('ID thông báo không hợp lệ');
     }
 
     const notif = await this.notifRepo.findOne({ where: { _id: new ObjectId(id) } });
-    
-    // Nếu không tìm thấy, trả về 404
+
     if (!notif) throw new NotFoundException('Thông báo không tồn tại');
 
-    // Kiểm tra quyền sở hữu
     if (notif.recipient_id !== userId) {
         throw new NotFoundException('Bạn không sở hữu thông báo này');
     }
@@ -59,7 +51,6 @@ async markAsRead(id: string, userId: string) {
     return await this.notifRepo.save(notif);
   }
 
-  // 4. ĐÁNH DẤU ĐÃ ĐỌC TẤT CẢ
   async markAllAsRead(userId: string) {
     await this.notifRepo.updateMany(
       { recipient_id: userId, is_read: false },

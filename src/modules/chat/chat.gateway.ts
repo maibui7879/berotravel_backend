@@ -38,8 +38,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const payload = this.jwtService.verify(token, { secret }); 
       
       client.data.user = payload; 
-      
-      // Mọi user sau khi connect đều tự động Join vào kênh riêng tư của mình (nhận noti 1-1 toàn cầu)
+
       const personalRoom = `user_${payload.sub}`;
       client.join(personalRoom);
       
@@ -54,7 +53,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`User disconnected: ${client.id}`);
   }
 
-  // Client mở một phòng chat cụ thể (màn hình chat)
 @SubscribeMessage('join_room')
 async handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { room_id?: string, journey_id?: string }) {
     try {
@@ -63,13 +61,11 @@ async handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { r
 
       let targetRoomId = data.room_id;
 
-      // Nếu client chỉ truyền journey_id lên
       if (!targetRoomId && data.journey_id) {
         targetRoomId = await this.chatService.getOrCreateJourneyRoom(data.journey_id, userId);
       }
 
       if (targetRoomId) {
-        // [VÁ LỖI BẢO MẬT]: Bắt buộc kiểm tra quyền của User trước khi cho phép tham gia Socket Room
         await this.chatService.checkUserInRoom(targetRoomId, userId);
 
         const roomIdStr = `room_${targetRoomId}`;
@@ -82,7 +78,6 @@ async handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { r
       }
     } catch (error) {
       console.error('Lỗi khi join room:', error.message);
-      // Nếu user không có quyền (bị hàm checkUserInRoom ném ra ForbiddenException), chặn việc Join
       client.emit('error', { message: error.message });
     }
   }
@@ -92,27 +87,21 @@ async handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { r
     try {
       console.log('--> Nhận lệnh send_message từ:', client.data.user.sub);
       const userId = client.data.user.sub;
-      
-      // Lưu vào DB
+
       const savedMsg = await this.chatService.saveMessage(userId, dto);
-      
-      // Phát tới kênh chung của phòng chat (Dành cho những người ĐANG mở màn hình chat này)
+
       const targetRoom = `room_${savedMsg.room_id}`;
       this.server.to(targetRoom).emit('receive_message', savedMsg);
 
-      // Trả về cho chính client vừa gửi để frontend/postman nhận được phản hồi ngay lập tức
       client.emit('message_sent_success', savedMsg);
 
-      // Nếu là chat 1-1, bắt buộc phải bắn notification (popup) cho cả user nhận (dù chưa mở màn hình chat)
       if (dto.receiver_id) {
         this.server.to(`user_${dto.receiver_id}`).emit('new_message_alert', savedMsg);
-        // Bắn lại cho sender để đồng bộ nếu họ đăng nhập nhiều device
         this.server.to(`user_${userId}`).emit('new_message_alert', savedMsg); 
       }
 
     } catch (error) {
       console.error('Lỗi tại Gateway:', error.message);
-      // Bắn lỗi ngược về Postman để bạn nhìn thấy ở tab Response
       client.emit('error', { message: error.message, stack: error.stack }); 
     }
   }

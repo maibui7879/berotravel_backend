@@ -123,10 +123,7 @@ export class AdminController {
     return this.dashboardService.getUserGrowthTrend(parseInt(days) || 30);
   }
 
-  /**
-   * GET /admin/payouts/stats
-   * Get payout statistics
-   */
+
   @Roles(Role.ADMIN, )
   @ApiOperation({
     summary: 'Get payout statistics',

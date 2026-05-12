@@ -387,7 +387,6 @@ getPublicFeed(
     @Param('id') id: string,
     @GetCurrentUser('sub') userId: string
   ) {
-    // Kiểm tra quyền truy cập hành trình trước khi cho phép lấy album
     await this.journeysService.findOne(id, userId); 
     return this.journeysService.getJourneyAlbum(id);
   }
@@ -398,10 +397,6 @@ getPublicFeed(
   leaveJourney(@Param('id') journeyId: string, @GetCurrentUser('sub') userId: string) {
     return this.journeysService.leaveJourney(journeyId, userId);
   }
-
-  // ==========================================
-  // HOST TRANSFER & PERMISSION MANAGEMENT
-  // ==========================================
 
   @Get(':id/members/host-candidates')
   @ApiBearerAuth()

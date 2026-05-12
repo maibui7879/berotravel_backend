@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { WsCatchAllFilter } from '../../common/filters/ws-exception.filter';
 
 @WebSocketGateway({
-  namespace: '/notifications', // Namespace riêng
+  namespace: '/notifications', 
   cors: { origin: '*' },
 })
 @UseFilters(new WsCatchAllFilter())
@@ -23,7 +23,6 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
     private readonly configService: ConfigService,
   ) {}
 
-  // 1. KẾT NỐI & JOIN ROOM CÁ NHÂN
   async handleConnection(client: Socket) {
     try {
       const token = client.handshake.query.token as string;
@@ -32,7 +31,6 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
       const secret = this.configService.get<string>('JWT_SECRET');
       const payload = this.jwtService.verify(token, { secret });
 
-      // [QUAN TRỌNG] Join vào room mang tên User ID của chính mình
       client.join(payload.sub); 
       
       console.log(`User ${payload.sub} connected to Notifications`);
@@ -42,12 +40,9 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
   }
 
   handleDisconnect(client: Socket) {
-    // console.log(`Client disconnected: ${client.id}`);
   }
 
-  // 2. HÀM GỬI THÔNG BÁO (Được Service gọi)
   sendToUser(userId: string, notification: any) {
-    // Bắn sự kiện 'new_notification' tới room userId
     this.server.to(userId).emit('new_notification', notification);
   }
 }

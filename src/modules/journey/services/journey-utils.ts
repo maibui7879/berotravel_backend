@@ -22,14 +22,12 @@ export class JourneyUtils {
     return Number((R * c).toFixed(1));
   }
 
-  // [SỬA] Chuyển HH:mm thành phút
   static timeToMinutes(time: string | null | undefined): number {
     const safeTime = time || '00:00'; 
     const [h, m] = safeTime.split(':').map(Number);
     return h * 60 + m;
   }
 
-  // [SỬA] Hỗ trợ cộng phút xuyên ngày (24h)
   static addMinutesToTime(time: string | null | undefined, mins: number): string {
     const totalMinutes = this.timeToMinutes(time || '08:00') + mins;
     const h = Math.floor((totalMinutes / 60) % 24);
@@ -37,11 +35,10 @@ export class JourneyUtils {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   }
 
-  // [MỚI] Tính duration hỗ trợ xuyên đêm (Start: 22:00, End: 02:00 => 240 mins)
   static getDurationMinutes(startTime: string, endTime: string): number {
     const start = this.timeToMinutes(startTime);
     let end = this.timeToMinutes(endTime);
-    if (end < start) end += 1440; // Cộng 24h
+    if (end < start) end += 1440; 
     return end - start;
   }
 

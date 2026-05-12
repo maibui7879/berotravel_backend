@@ -38,10 +38,6 @@ export class SendMessageDto {
   reply_to_id?: string;
 }
 
-/**
- * ChatMessageResponseDto - Returned when fetching messages with user info embedded
- * Includes sender fullName and avatar to reduce FE requests
- */
 export class ChatMessageResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() room_id: string;
@@ -56,7 +52,6 @@ export class ChatMessageResponseDto {
   @ApiProperty() created_at: Date;
 }
 
-// [UPDATED] Vote Poll - journey_id thay vì group_id
 export class VotePollDto {
   
   @ApiProperty({ description: 'Journey ID' })
@@ -65,7 +60,7 @@ export class VotePollDto {
   room_id: string;
 
   @ApiPropertyOptional({ description: 'Journey ID (Tùy chọn)' })
-  @IsOptional() // Cho phép gửi journey_id
+  @IsOptional()
   @IsString()
   journey_id?: string;
 
@@ -80,7 +75,6 @@ export class VotePollDto {
   option_id: string;
 }
 
-// [UPDATED] React Message - journey_id thay vì group_id
 export class ReactMessageDto {
   @ApiProperty({ description: 'Journey ID' })
   @IsNotEmpty()
@@ -88,7 +82,7 @@ export class ReactMessageDto {
   room_id: string;
 
   @ApiPropertyOptional({ description: 'Journey ID (Tùy chọn)' })
-  @IsOptional() // Cho phép gửi journey_id
+  @IsOptional() 
   @IsString()
   journey_id?: string;
   
@@ -100,10 +94,9 @@ export class ReactMessageDto {
   @ApiProperty()
   @IsNotEmpty()
   @IsString()
-  emoji: string; // Client gửi chuỗi icon lên
+  emoji: string; 
 }
 
-// 3. Tìm kiếm tin nhắn
 export class SearchChatDto {
   @ApiPropertyOptional({ description: 'Từ khóa tìm kiếm' })
   @IsOptional()

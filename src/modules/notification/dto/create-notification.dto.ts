@@ -4,7 +4,7 @@ import { NotificationType } from '../entities/notification.entity';
 export class CreateNotificationDto {
   @IsNotEmpty()
   @IsString()
-  recipient_id: string;
+  recipient_id!: string;
 
   @IsOptional()
   @IsString()
@@ -16,15 +16,15 @@ export class CreateNotificationDto {
 
   @IsNotEmpty()
   @IsEnum(NotificationType)
-  type: NotificationType;
+  type!: NotificationType;
 
   @IsNotEmpty()
   @IsString()
-  title: string;
+  title!: string;
 
   @IsNotEmpty()
   @IsString()
-  message: string;
+  message!: string;
 
   @IsOptional()
   @IsObject()
